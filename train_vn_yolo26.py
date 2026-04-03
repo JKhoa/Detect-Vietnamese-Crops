@@ -24,7 +24,7 @@ class TrainingConfig:
     
     # Training parameters
     MODEL_SIZE = r"d:\Study\Detect_VNese_Props\ultralytics\runs\train\weights\last.pt"  # Resume from last checkpoint
-    EPOCHS = 100
+    EPOCHS = 50
     BATCH_SIZE = 16
     IMAGE_SIZE = 640
     PATIENCE = 10  # Early stopping patience
