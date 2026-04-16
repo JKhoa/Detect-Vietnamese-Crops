@@ -19,23 +19,54 @@ const WS_BASE = (envWsBase && envWsBase.length > 0
   ? envWsBase
   : API_BASE.replace(/^http/i, 'ws')).replace(/\/$/, '');
 
-// On GitHub Pages, default to mock mode unless a public backend URL is explicitly configured.
+// ── MOCK_MODE logic ──────────────────────────────────────────────────────────
+// MOCK_MODE = true  ONLY when:
+//   a) Running on GitHub Pages with no explicit backend configured, OR
+//   b) VITE_MOCK_MODE is explicitly set to 'true'
+//
+// LOCAL DEV default: false → always hits real Flask backend at API_BASE.
+// To force mock locally: add VITE_MOCK_MODE=true to .env.local (not recommended).
+//
+// Why we removed the localStorage override:
+//   It could persist stale "backendMode=real" from a previous GitHub-Pages visit
+//   and cause the app to try connecting to localhost:8000 while deployed — failing
+//   silently. Explicit env vars are safer and more predictable.
 const forceMockOnGitHubPages = isGitHubPages && !envApiBase;
-// MOCK_MODE: true  → dùng dữ liệu giả
-//            false → kết nối backend thật (set VITE_MOCK_MODE=false)
-const MOCK_MODE = forceMockOnGitHubPages || import.meta.env.VITE_MOCK_MODE !== 'false';
+const MOCK_MODE = forceMockOnGitHubPages || import.meta.env.VITE_MOCK_MODE === 'true';
+
+// ── Startup diagnostics (visible in browser DevTools → Console) ──────────────
+if (typeof window !== 'undefined') {
+  console.info(
+    `%c[NôngSản AI] API config`,
+    'color:#16a34a;font-weight:bold',
+    {
+      mode:       MOCK_MODE ? '⚠ MOCK (demo data)' : '✓ REAL backend',
+      API_BASE,
+      WS_BASE,
+      isGitHubPages,
+      VITE_MOCK_MODE: import.meta.env.VITE_MOCK_MODE ?? '(not set)',
+    }
+  );
+  if (MOCK_MODE && !isGitHubPages) {
+    console.warn(
+      '[NôngSản AI] Running in MOCK mode on a non-GitHub-Pages host. ' +
+      'Set VITE_MOCK_MODE=true intentionally? ' +
+      'For real backend: set VITE_MOCK_MODE=false in .env.local'
+    );
+  }
+}
 
 export const BACKEND_INFO = {
   apiBase: API_BASE,
   wsBase: WS_BASE,
-  docsUrl: `${API_BASE}/docs`,
+  docsUrl: `${API_BASE}/health`,
   mockMode: MOCK_MODE,
   isGitHubPages,
 };
 
 export const getBackendConnectionHint = () => {
   if (MOCK_MODE) {
-    return 'Đang chạy chế độ demo (mock). Để dùng backend thật, cấu hình VITE_API_BASE_URL.';
+    return 'Đang chạy chế độ demo (mock). Trên GitHub Pages, thêm ?backend=real để dùng backend thật.';
   }
   return `Không kết nối được backend tại ${API_BASE}.`;
 };
@@ -116,16 +147,40 @@ let mockSessions: DetectionSession[] = [
 
 // ─── API Functions ──────────────────────────────────────────────────────────
 
+// ── Shared fetch helper with fail-fast error ─────────────────────────────────
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch (networkErr) {
+    // Network-level failure (backend down, CORS, etc.)
+    throw new Error(
+      `Không kết nối được backend tại ${API_BASE}.\n` +
+      `Kiểm tra: python backend/app.py đang chạy và CORS cho phép ${window.location.origin}.\n` +
+      `Chi tiết: ${networkErr}`
+    );
+  }
+  if (!res.ok) {
+    let body = '';
+    try { body = await res.text(); } catch (_) { /* ignore */ }
+    throw new Error(
+      `Backend trả lỗi ${res.status} từ ${url}.\n` +
+      (body ? `Server: ${body.slice(0, 200)}` : '')
+    );
+  }
+  return res;
+}
+
 export const checkHealth = async (): Promise<HealthCheckResponse> => {
   if (!MOCK_MODE) {
-    const res = await fetch(`${API_BASE}/health`);
+    const res = await apiFetch(`${API_BASE}/health`);
     return res.json();
   }
   await sleep(300);
   return {
     status: 'healthy',
     model_loaded: true,
-    model_path: 'best.pt',
+    model_path: 'best.pt (mock)',
     classes_count: 74,
     version: '1.0.0',
     uptime_seconds: 3600,
@@ -134,8 +189,8 @@ export const checkHealth = async (): Promise<HealthCheckResponse> => {
 
 export const detectImage = async (
   file: File,
-  conf = 0.5,
-  iou = 0.45,
+  conf = 0.25,    // lowered from 0.5 to match backend default
+  iou  = 0.50,
   maxDet = 100
 ): Promise<ImageDetectionResult> => {
   if (!MOCK_MODE) {
@@ -144,8 +199,7 @@ export const detectImage = async (
     form.append('conf', conf.toString());
     form.append('iou', iou.toString());
     form.append('max_det', maxDet.toString());
-    const res = await fetch(`${API_BASE}/api/v1/detect/image`, { method: 'POST', body: form });
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+    const res = await apiFetch(`${API_BASE}/api/v1/detect/image`, { method: 'POST', body: form });
     return res.json();
   }
 
@@ -192,17 +246,15 @@ export const detectImageUrl = async (
 export const detectVideo = async (
   file: File,
   onProgress: (pct: number) => void,
-  conf = 0.5,
-  iou = 0.45
+  conf = 0.25,    // lowered from 0.5
+  iou  = 0.50
 ): Promise<VideoDetectionResult> => {
   if (!MOCK_MODE) {
-    // Real: use SSE or polling
     const form = new FormData();
     form.append('file', file);
     form.append('conf', conf.toString());
     form.append('iou', iou.toString());
-    const res = await fetch(`${API_BASE}/api/v1/detect/video`, { method: 'POST', body: form });
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
+    const res = await apiFetch(`${API_BASE}/api/v1/detect/video`, { method: 'POST', body: form });
     return res.json();
   }
 
