@@ -59,3 +59,4 @@ checkpoints/
 Web app for agricultural detection/node_modules/
 Web app for agricultural detection/dist/
 Web app for agricultural detection/.env.local
+Web app for agricultural detection/backend/.env

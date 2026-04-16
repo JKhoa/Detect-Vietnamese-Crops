@@ -1,5 +1,5 @@
 """
-Flask backend for Vietnamese agricultural product detection.
+Flask backend — Vietnamese agricultural product detection via Google Cloud Vision API.
 
 HTTP endpoints:
   GET  /health
@@ -14,12 +14,8 @@ Native WebSocket (flask-sock):
   client → binary JPEG bytes (one frame per message)
   server → JSON string (RealtimeDetectionResult)
 
-Startup validation
-──────────────────
-After loading the model, app.py validates classes_count == 74.
-If a COCO 80-class model slips through (e.g. someone accidentally sets
-YOLO_MODEL_PATH to yolo11n.pt), the server refuses to start unless
-ALLOW_COCO_FALLBACK=true is set.  This prevents silent wrong-class inference.
+Cấu hình (biến môi trường):
+  GCV_API_KEY   — Google Cloud Vision API key (bắt buộc)
 """
 
 import json
@@ -29,11 +25,20 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Load .env file nếu có (trước khi import detection)
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sock import Sock
 
-from detection import YOLODetector, resolve_model_path
+from detection import GCVDetector, resolve_detector
 from sessions import store as session_store
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -45,45 +50,23 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 sock = Sock(app)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Load YOLO model at startup
+# Load GCV detector at startup
 # ──────────────────────────────────────────────────────────────────────────────
 
 _start_time = time.time()
-_detector: YOLODetector | None = None
-_model_path: str = ""
-_model_error: str = ""
-
-_EXPECTED_CLASSES = 74   # LeafLogic-VN dataset
+_detector: GCVDetector | None = None
+_detector_error: str = ""
 
 try:
-    _model_path = resolve_model_path()
+    _detector = resolve_detector()
     print(f"\n{'='*60}")
-    print(f"[backend] Loading model : {_model_path}")
-    _detector = YOLODetector(_model_path)
-
-    n = len(_detector.classes)
-    print(f"[backend] classes_count : {n}")
-    print(f"[backend] first 10 names: {_detector.classes[:10]}")
-    print(f"[backend] last  5 names : {_detector.classes[-5:]}")
+    print(f"[backend] GCV detector loaded successfully.")
+    print(f"[backend] Mapped classes: {len(_detector.classes)}")
+    print(f"[backend] Sample classes: {_detector.classes[:10]}")
     print(f"{'='*60}\n")
-
-    # ── Guard: block COCO model unless explicitly opted in ──────────────────
-    allow_coco = os.getenv("ALLOW_COCO_FALLBACK", "").lower() in ("1", "true", "yes")
-    if n != _EXPECTED_CLASSES and not allow_coco:
-        raise RuntimeError(
-            f"Model has {n} classes but expected {_EXPECTED_CLASSES}.\n"
-            f"Model path: {_model_path}\n"
-            f"This looks like a COCO/wrong model. "
-            f"Set ALLOW_COCO_FALLBACK=true to override (not recommended for production)."
-        )
-    if n == _EXPECTED_CLASSES:
-        print(f"[backend] ✓ Model validated: {n} agricultural classes.")
-    else:
-        print(f"[backend] ⚠ ALLOW_COCO_FALLBACK=true — running with {n}-class model.")
-
 except Exception as exc:
-    _model_error = str(exc)
-    print(f"[backend] ✗ FATAL: Could not load model — {exc}")
+    _detector_error = str(exc)
+    print(f"[backend] ✗ FATAL: Could not init GCV detector — {exc}")
     traceback.print_exc()
     print("[backend] All detection endpoints will return 503 until restart.")
 
@@ -94,31 +77,27 @@ except Exception as exc:
 
 @app.get("/health")
 def health():
-    classes_count = len(_detector.classes) if _detector else 0
-    # Include first 10 class names so frontend can verify without extra call
-    class_sample = _detector.classes[:10] if _detector else []
     return jsonify({
         "status":        "ok" if _detector else "error",
         "model_loaded":  _detector is not None,
-        "model_path":    _model_path,
-        "model_error":   _model_error,
-        "classes_count": classes_count,
-        "class_sample":  class_sample,
-        "version":       "1.0.0",
+        "model_path":    "Google Cloud Vision API",
+        "model_error":   _detector_error,
+        "classes_count": len(_detector.classes) if _detector else 0,
+        "class_sample":  _detector.classes[:10] if _detector else [],
+        "version":       "2.0.0",
         "uptime_seconds": round(time.time() - _start_time, 1),
     })
 
 
-def _require_model():
-    """Return (None, None) if model OK, or (response, status_code) if not."""
+def _require_detector():
     if _detector is None:
-        return jsonify({"error": f"Model not loaded: {_model_error}"}), 503
+        return jsonify({"error": f"GCV detector not loaded: {_detector_error}"}), 503
     return None, None
 
 
 @app.post("/api/v1/detect/image")
 def detect_image():
-    err, code = _require_model()
+    err, code = _require_detector()
     if err:
         return err, code
 
@@ -126,10 +105,9 @@ def detect_image():
         return jsonify({"error": "No 'file' field in request"}), 400
 
     file    = request.files["file"]
-    conf    = float(request.form.get("conf",    0.25))   # default lowered
+    conf    = float(request.form.get("conf",    0.25))
     iou     = float(request.form.get("iou",     0.50))
     max_det = int(request.form.get("max_det",   100))
-    augment = request.form.get("augment", "false").lower() in ("1", "true")
 
     image_bytes = file.read()
     if not image_bytes:
@@ -139,8 +117,8 @@ def detect_image():
 
     try:
         result = _detector.detect_image(
-            image_bytes, conf=conf, iou=iou,
-            max_det=max_det, augment=augment,
+            image_bytes,
+            conf=conf, iou=iou, max_det=max_det,
             session_id=session_id,
         )
     except Exception as exc:
@@ -157,7 +135,7 @@ def detect_image():
 
 @app.post("/api/v1/detect/video")
 def detect_video():
-    err, code = _require_model()
+    err, code = _require_detector()
     if err:
         return err, code
 
@@ -226,9 +204,9 @@ def realtime(ws):
     frame_id   = 0
 
     ws.send(json.dumps({
-        "type":         "connected",
-        "session_id":   session_id,
-        "model_loaded": _detector is not None,
+        "type":          "connected",
+        "session_id":    session_id,
+        "model_loaded":  _detector is not None,
         "classes_count": len(_detector.classes) if _detector else 0,
     }))
 
@@ -242,7 +220,7 @@ def realtime(ws):
                 ws.send(json.dumps({
                     "frame_id": frame_id, "objects": [],
                     "inference_time_ms": 0.0, "fps": 0.0,
-                    "error": f"Model not loaded: {_model_error}",
+                    "error": f"GCV detector not loaded: {_detector_error}",
                 }))
                 frame_id += 1
                 continue
@@ -250,8 +228,7 @@ def realtime(ws):
             frame_bytes = (data if isinstance(data, (bytes, bytearray))
                            else data.encode())
             try:
-                result = _detector.detect_frame(bytes(frame_bytes),
-                                                 frame_id=frame_id)
+                result = _detector.detect_frame(bytes(frame_bytes), frame_id=frame_id)
             except Exception as exc:
                 traceback.print_exc()
                 ws.send(json.dumps({
