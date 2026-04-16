@@ -7,10 +7,38 @@ import type {
 } from '../types';
 import { CLASS_NAMES } from '../data/metadata';
 
-const API_BASE = 'http://localhost:8000';
-// MOCK_MODE: true  → dùng dữ liệu giả (GitHub Pages, không có backend)
-//            false → kết nối backend thật (local dev, set VITE_MOCK_MODE=false trong .env.local)
-const MOCK_MODE = import.meta.env.VITE_MOCK_MODE !== 'false';
+const envApiBase = import.meta.env.VITE_API_BASE_URL?.trim();
+const envWsBase = import.meta.env.VITE_WS_BASE_URL?.trim();
+const isGitHubPages =
+  typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+
+const API_BASE = (envApiBase && envApiBase.length > 0
+  ? envApiBase
+  : 'http://localhost:8000').replace(/\/$/, '');
+const WS_BASE = (envWsBase && envWsBase.length > 0
+  ? envWsBase
+  : API_BASE.replace(/^http/i, 'ws')).replace(/\/$/, '');
+
+// On GitHub Pages, default to mock mode unless a public backend URL is explicitly configured.
+const forceMockOnGitHubPages = isGitHubPages && !envApiBase;
+// MOCK_MODE: true  → dùng dữ liệu giả
+//            false → kết nối backend thật (set VITE_MOCK_MODE=false)
+const MOCK_MODE = forceMockOnGitHubPages || import.meta.env.VITE_MOCK_MODE !== 'false';
+
+export const BACKEND_INFO = {
+  apiBase: API_BASE,
+  wsBase: WS_BASE,
+  docsUrl: `${API_BASE}/docs`,
+  mockMode: MOCK_MODE,
+  isGitHubPages,
+};
+
+export const getBackendConnectionHint = () => {
+  if (MOCK_MODE) {
+    return 'Đang chạy chế độ demo (mock). Để dùng backend thật, cấu hình VITE_API_BASE_URL.';
+  }
+  return `Không kết nối được backend tại ${API_BASE}.`;
+};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -268,7 +296,7 @@ export class RealtimeDetectionClient {
 
   connect(canvasWidth = 640, canvasHeight = 480) {
     if (!MOCK_MODE) {
-      this.ws = new WebSocket(`ws://localhost:8000/api/v1/detect/realtime`);
+      this.ws = new WebSocket(`${WS_BASE}/api/v1/detect/realtime`);
       this.ws.binaryType = 'arraybuffer';
       this.ws.onmessage = (e) => {
         const data = JSON.parse(e.data as string);

@@ -6,7 +6,22 @@
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Web app for agricultural detection</title>
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-      <script type="module" crossorigin src="/Detect-Vietnamese-Crops/assets/index-BD8cW5Gd.js"></script>
+      <script>
+        // GitHub Pages SPA fallback: convert redirected query params back to real path.
+        (function () {
+          var redirect = window.location.search.match(/[?&]p=([^&]+)/);
+          if (!redirect) return;
+
+          var path = decodeURIComponent(redirect[1]).replace(/~and~/g, '&');
+          var query = window.location.search
+            .replace(/[?&]p=[^&]*/g, '')
+            .replace(/^&/, '?');
+          var hash = window.location.hash || '';
+
+          window.history.replaceState(null, '', path + query + hash);
+        })();
+      </script>
+      <script type="module" crossorigin src="/Detect-Vietnamese-Crops/assets/index-Cbqq2m4m.js"></script>
       <link rel="stylesheet" crossorigin href="/Detect-Vietnamese-Crops/assets/index-DmHRolAb.css">
     </head>
 

@@ -12,7 +12,7 @@ function NotFound() {
       <p style={{ fontWeight: 700, fontSize: '1.2rem' }} className="text-gray-700">
         Trang không tồn tại
       </p>
-      <a href="/" className="text-green-600 hover:underline" style={{ fontSize: '0.875rem' }}>
+      <a href={import.meta.env.BASE_URL} className="text-green-600 hover:underline" style={{ fontSize: '0.875rem' }}>
         Về trang chủ
       </a>
     </div>
