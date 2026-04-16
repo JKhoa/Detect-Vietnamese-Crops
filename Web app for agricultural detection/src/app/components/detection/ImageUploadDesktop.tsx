@@ -4,7 +4,7 @@ import {
   AlertCircle, Clock, Layers, Settings2
 } from 'lucide-react';
 import type { ImageDetectionResult } from '../../types';
-import { detectImage, getBackendConnectionHint } from '../../services/mockApi';
+import { detectImage } from '../../services/mockApi';
 import BoundingBoxCanvas from './BoundingBoxCanvas';
 import ProductMetadataCard from '../product/ProductMetadataCard';
 
@@ -52,8 +52,8 @@ export default function ImageUploadDesktop() {
       const res = await detectImage(file, conf, iou);
       setResult(res);
       setSelectedObj(0);
-    } catch {
-      setError(getBackendConnectionHint());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Nhận diện thất bại. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }

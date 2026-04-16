@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { checkHealth, BACKEND_INFO } from '../services/mockApi';
+const USE_GCV = BACKEND_INFO.useGCV;
 
 interface NavItem {
   path: string;
@@ -47,8 +48,12 @@ export default function DesktopLayout() {
       .finally(() => setChecking(false));
   }, []);
 
-  // Check on mount and every 30 s
+  // GCV mode: không cần health check backend — set healthy ngay lập tức
   useEffect(() => {
+    if (USE_GCV) {
+      setHealth({ status: 'ok', model_loaded: true, classes_count: 74 });
+      return;
+    }
     doHealthCheck();
     const timer = setInterval(doHealthCheck, 30_000);
     return () => clearInterval(timer);
@@ -145,8 +150,7 @@ export default function DesktopLayout() {
                       {health.model_loaded ? 'Mô hình sẵn sàng' : 'Mô hình chưa tải'}
                     </p>
                     <p style={{ fontSize: '0.62rem' }} className="text-gray-400 truncate">
-                      YOLO · {health.classes_count ?? 74} lớp
-                      {modelBasename ? ` · ${modelBasename}` : ''}
+                      {USE_GCV ? 'Cloud Vision API' : `YOLO · ${health.classes_count ?? 74} lớp${modelBasename ? ` · ${modelBasename}` : ''}`}
                     </p>
                   </div>
                   <button onClick={doHealthCheck} title="Kiểm tra lại"
@@ -154,7 +158,7 @@ export default function DesktopLayout() {
                     <RefreshCw size={11} className={checking ? 'animate-spin' : ''} />
                   </button>
                 </div>
-              ) : healthError && !BACKEND_INFO.mockMode ? (
+              ) : healthError && !BACKEND_INFO.mockMode && !USE_GCV ? (
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50">
                   <AlertTriangle size={13} className="text-red-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
@@ -175,20 +179,13 @@ export default function DesktopLayout() {
 
               {/* Mode indicator */}
               <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
-                BACKEND_INFO.mockMode ? 'bg-orange-50' : 'bg-blue-50'
+                BACKEND_INFO.mockMode ? 'bg-orange-50' : 'bg-green-50'
               }`}>
-                <Cpu size={14} className={BACKEND_INFO.mockMode ? 'text-orange-500' : 'text-blue-500'} />
+                <Cpu size={14} className={BACKEND_INFO.mockMode ? 'text-orange-500' : 'text-green-500'} />
                 <p style={{ fontSize: '0.7rem' }}
-                   className={BACKEND_INFO.mockMode ? 'text-orange-700' : 'text-blue-700'}>
-                  {BACKEND_INFO.mockMode ? '⚠ Demo Mock Mode' : '✓ Backend thật'}
+                   className={BACKEND_INFO.mockMode ? 'text-orange-700' : 'text-green-700'}>
+                  {BACKEND_INFO.mockMode ? '⚠ Demo Mock Mode' : '✓ Đang hoạt động'}
                 </p>
-                {!BACKEND_INFO.mockMode && (
-                  <a href={BACKEND_INFO.docsUrl} target="_blank" rel="noreferrer"
-                     className="ml-auto text-blue-300 hover:text-blue-600"
-                     title={`Health: ${BACKEND_INFO.apiBase}/health`}>
-                    <ExternalLink size={12} />
-                  </a>
-                )}
               </div>
             </>
           )}
@@ -197,13 +194,13 @@ export default function DesktopLayout() {
             <button
               onClick={doHealthCheck}
               className={`w-full flex justify-center p-2 rounded-xl transition-colors ${
-                healthError && !BACKEND_INFO.mockMode
+                healthError && !BACKEND_INFO.mockMode && !USE_GCV
                   ? 'text-red-400 hover:bg-red-50'
                   : 'text-gray-400 hover:bg-green-50'
               }`}
-              title={healthError ? 'Backend lỗi — click để thử lại' : 'Kiểm tra backend'}
+              title={healthError && !USE_GCV ? 'Backend lỗi — click để thử lại' : 'Trạng thái hệ thống'}
             >
-              {healthError && !BACKEND_INFO.mockMode
+              {healthError && !BACKEND_INFO.mockMode && !USE_GCV
                 ? <AlertTriangle size={18} />
                 : <Settings size={18} />}
             </button>
