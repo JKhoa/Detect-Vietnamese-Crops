@@ -255,6 +255,8 @@ class YOLODetector:
 # ──────────────────────────────────────────────────────────────────────────────
 
 _CANDIDATE_PATHS = [
+    os.getenv("YOLO_MODEL_PATH", "").strip(),
+    r"c:\Users\Admin\Downloads\Study\Study\Detect_VNese_Props\ultralytics\runs\train\weights\best.pt",
     r"d:\Study\Detect_VNese_Props\ultralytics\runs\detect\train\weights\best.pt",
     r"d:\Study\Detect_VNese_Props\ultralytics\runs\train\weights\best.pt",
     # Fallback to pre-trained nano model in repo root
@@ -264,7 +266,7 @@ _CANDIDATE_PATHS = [
 
 def resolve_model_path() -> str:
     for p in _CANDIDATE_PATHS:
-        if Path(p).exists():
+        if p and Path(p).exists():
             return p
     raise FileNotFoundError(
         "No YOLO model found. Checked:\n" + "\n".join(_CANDIDATE_PATHS)
