@@ -4,7 +4,7 @@ import {
   AlertCircle, Clock, Layers, Settings2
 } from 'lucide-react';
 import type { ImageDetectionResult } from '../../types';
-import { detectImage } from '../../services/mockApi';
+import { detectImage, getBackendConnectionHint } from '../../services/mockApi';
 import BoundingBoxCanvas from './BoundingBoxCanvas';
 import ProductMetadataCard from '../product/ProductMetadataCard';
 
@@ -53,7 +53,7 @@ export default function ImageUploadDesktop() {
       setResult(res);
       setSelectedObj(0);
     } catch {
-      setError('Lỗi kết nối backend. Kiểm tra server đang chạy tại localhost:8000');
+      setError(getBackendConnectionHint());
     } finally {
       setLoading(false);
     }

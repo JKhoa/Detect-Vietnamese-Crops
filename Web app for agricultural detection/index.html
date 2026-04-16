@@ -6,6 +6,21 @@
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>Web app for agricultural detection</title>
       <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+      <script>
+        // GitHub Pages SPA fallback: convert redirected query params back to real path.
+        (function () {
+          var redirect = window.location.search.match(/[?&]p=([^&]+)/);
+          if (!redirect) return;
+
+          var path = decodeURIComponent(redirect[1]).replace(/~and~/g, '&');
+          var query = window.location.search
+            .replace(/[?&]p=[^&]*/g, '')
+            .replace(/^&/, '?');
+          var hash = window.location.hash || '';
+
+          window.history.replaceState(null, '', path + query + hash);
+        })();
+      </script>
     </head>
 
     <body>

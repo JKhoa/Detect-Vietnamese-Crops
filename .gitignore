@@ -51,3 +51,11 @@ stop.flag
 
 # Checkpoints (keep only config)
 checkpoints/
+
+# Local agent/config folders
+.claude/
+
+# Web app build/deps/local env
+Web app for agricultural detection/node_modules/
+Web app for agricultural detection/dist/
+Web app for agricultural detection/.env.local
