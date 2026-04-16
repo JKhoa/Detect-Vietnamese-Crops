@@ -17,8 +17,9 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
-  // Base URL for GitHub Pages: https://jkhoa.github.io/Detect-Vietnamese-Crops/
-  base: '/Detect-Vietnamese-Crops/',
+  // Base URL: '/' cho Netlify, '/Detect-Vietnamese-Crops/' cho GitHub Pages
+  // Đặt VITE_BASE_PATH trong env để override
+  base: process.env.VITE_BASE_PATH ?? '/', // '/' = Netlify | '/Detect-Vietnamese-Crops/' = GitHub Pages
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if

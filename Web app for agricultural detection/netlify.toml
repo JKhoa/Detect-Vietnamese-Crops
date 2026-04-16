@@ -1,0 +1,14 @@
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+[build.environment]
+  VITE_MOCK_MODE    = "false"
+  VITE_BASE_PATH    = "/"
+  NODE_VERSION      = "20"
+
+# SPA: mọi route đều trả về index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
