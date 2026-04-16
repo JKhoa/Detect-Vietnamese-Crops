@@ -8,7 +8,9 @@ import type {
 import { CLASS_NAMES } from '../data/metadata';
 
 const API_BASE = 'http://localhost:8000';
-const MOCK_MODE = false; // Set to true to use mock data without a backend
+// MOCK_MODE: true  → dùng dữ liệu giả (GitHub Pages, không có backend)
+//            false → kết nối backend thật (local dev, set VITE_MOCK_MODE=false trong .env.local)
+const MOCK_MODE = import.meta.env.VITE_MOCK_MODE !== 'false';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 

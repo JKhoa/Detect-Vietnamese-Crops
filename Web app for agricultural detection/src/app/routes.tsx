@@ -19,7 +19,8 @@ function NotFound() {
   );
 }
 
-export const router = createBrowserRouter([
+export const router = createBrowserRouter(
+  [
   {
     path: '/',
     Component: AppShell,
@@ -33,4 +34,6 @@ export const router = createBrowserRouter([
       { path: '*', Component: NotFound },
     ],
   },
-]);
+  ],
+  { basename: import.meta.env.BASE_URL }
+);

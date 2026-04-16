@@ -17,6 +17,8 @@ function figmaAssetResolver() {
 }
 
 export default defineConfig({
+  // Base URL for GitHub Pages: https://jkhoa.github.io/Detect-Vietnamese-Crops/
+  base: '/Detect-Vietnamese-Crops/',
   plugins: [
     figmaAssetResolver(),
     // The React and Tailwind plugins are both required for Make, even if
