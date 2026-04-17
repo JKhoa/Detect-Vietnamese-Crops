@@ -1,21 +1,24 @@
 """
-GCVDetector — gọi Google Cloud Vision REST API và chuyển đổi kết quả
-sang JSON contract mà React frontend mong đợi.
+YOLOHFDetector — YOLO11n local (offline) + HuggingFace free Inference API.
 
-Thay thế hoàn toàn YOLODetector cũ. Không còn phụ thuộc vào ultralytics.
+Thay thế GCVDetector (đã bị 403 do Google Cloud billing).
 
-Luồng xử lý:
-  image_bytes / frame_bytes / video_bytes
-    → base64 encode
-    → POST https://vision.googleapis.com/v1/images:annotate?key=...
-    → localizedObjectAnnotations + labelAnnotations
-    → map GCV names → Vietnamese class names
-    → DetectedObject[] (cùng format cũ, frontend không cần thay đổi)
+Pipeline:
+  detect_image():
+    YOLO11n → bboxes → crop từng bbox → HF classifier → Vietnamese class name
+
+  detect_frame() [realtime WebSocket]:
+    YOLO11n only (HF quá chậm cho realtime)
+
+  detect_video():
+    YOLO11n only per frame (giống detect_frame)
+
+Env vars:
+  YOLO_MODEL_PATH  — đường dẫn tới .pt file (mặc định: yolo11n.pt)
+  HF_TOKEN         — HuggingFace token (tùy chọn, free tier không cần)
 """
 
-import base64
 import io
-import json
 import os
 import random
 import string
@@ -31,90 +34,90 @@ import requests as http_requests
 from PIL import Image
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GCV endpoint
+# HuggingFace free Inference API
 # ──────────────────────────────────────────────────────────────────────────────
-GCV_ENDPOINT = "https://vision.googleapis.com/v1/images:annotate"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Mapping: GCV object name (English) → Vietnamese class name (system)
-# GCV OBJECT_LOCALIZATION trả về tên tiếng Anh viết hoa như "Mango", "Banana"
-# ──────────────────────────────────────────────────────────────────────────────
-_GCV_TO_CLASS: dict[str, str] = {
-    # Trái cây nhiệt đới
-    "Mango":             "xoai",
-    "Pomelo":            "buoi",
-    "Dragon fruit":      "thanh_long",
-    "Dragonfruit":       "thanh_long",
-    "Watermelon":        "dua_hau",
-    "Banana":            "chuoi",
-    "Orange":            "cam",
-    "Tangerine":         "quit",
-    "Mandarin orange":   "quit",
-    "Mandarin":          "quit",
-    "Guava":             "oi",
-    "Longan":            "nhan",
-    "Lychee":            "vai",
-    "Litchi":            "vai",
-    "Rambutan":          "chom_chom",
-    "Durian":            "sau_rieng",
-    "Jackfruit":         "mit",
-    "Papaya":            "du_du",
-    "Coconut":           "dua",
-    "Lime":              "chanh",
-    "Lemon":             "chanh",
-    "Mangosteen":        "mang_cut",
-    "Custard apple":     "na",
-    "Sugar apple":       "na",
-    "Tamarind":          "me",
-    "Carambola":         "khe",
-    "Star fruit":        "khe",
-    "Starfruit":         "khe",
-    "Tomato":            "ca_chua",
-    "Sweet potato":      "khoai_lang",
-    "Cantaloupe":        "dua_luoi",
-    "Melon":             "dua_luoi",
-    "Honeydew":          "dua_luoi",
-    "Grapefruit":        "buoi",
-    "Pineapple":         "dua",          # fallback nếu không tách được
-    "Grape":             "nho",
-    "Strawberry":        "dau",
-    "Plum":              "man",
-    "Peach":             "dao",
-    "Apple":             "tao",
-    "Pear":              "le",
-    "Avocado":           "bo",
-    "Passion fruit":     "chanh_day",
-    "Sapodilla":         "hong_xiem",
-    "Fig":               "sung",
-    "Soursop":           "mang_cau",
-    "Breadfruit":        "sa_ke",
-    "Jujube":            "tao_ta",
-    "Kumquat":           "quat",
-    "Persimmon":         "hong",
-    "Pomegranate":       "luu",
-    "Pepper":            "ot",
-    "Bell pepper":       "ot",
-    "Chili pepper":      "ot",
-    "Eggplant":          "ca_tim",
-    "Bitter melon":      "kho_qua",
-    "Bitter gourd":      "kho_qua",
-    "Squash":            "bi",
-    "Pumpkin":           "bi_do",
-    "Corn":              "ngo",
-    "Cucumber":          "dua_chuot",
-    "Taro":              "khoai_mon",
-    "Cassava":           "san",
-    "Sweet corn":        "ngo",
-    "Potato":            "khoai_tay",
-    "Ginger":            "gung",
-    "Garlic":            "toi",
-    "Onion":             "hanh",
-    "Chive":             "he",
-    "Lemongrass":        "sa",
+_HF_MODEL   = "dima806/fruits_vegetable_image_detection"
+_HF_API_URL = f"https://api-inference.huggingface.co/models/{_HF_MODEL}"
+
+# Mapping HF label → Vietnamese class name
+_HF_TO_CLASS: dict[str, str] = {
+    "Banana":        "chuoi",
+    "Mango":         "xoai",
+    "Dragon Fruit":  "thanh_long",
+    "Dragonfruit":   "thanh_long",
+    "Watermelon":    "dua_hau",
+    "Orange":        "cam",
+    "Tangerine":     "quit",
+    "Mandarin":      "quit",
+    "Guava":         "oi",
+    "Longan":        "nhan",
+    "Lychee":        "vai",
+    "Rambutan":      "chom_chom",
+    "Durian":        "sau_rieng",
+    "Jackfruit":     "mit",
+    "Papaya":        "du_du",
+    "Coconut":       "dua",
+    "Lime":          "chanh",
+    "Lemon":         "chanh",
+    "Mangosteen":    "mang_cut",
+    "Soursop":       "mang_cau",
+    "Custard Apple": "mang_cau",
+    "Starfruit":     "khe",
+    "Carambola":     "khe",
+    "Star Fruit":    "khe",
+    "Pomelo":        "buoi",
+    "Grapefruit":    "buoi",
+    "Tomato":        "ca_chua",
+    "Passion Fruit": "chanh_day",
+    "Pomegranate":   "luu",
+    "Apple":         "tao",
+    "Pineapple":     "dua",
+    "Strawberry":    "dau",
+    "Grape":         "nho",
+    "Avocado":       "bo",
+    "Cantaloupe":    "dua_luoi",
+    "Honeydew":      "dua_luoi",
+    "Sweet Potato":  "khoai_lang",
+    "Pepper":        "ot",
+    "Chili":         "ot",
+    "Eggplant":      "ca_tim",
+    "Corn":          "ngo",
+    "Cucumber":      "dua_chuot",
+    "Potato":        "khoai_tay",
+    "Ginger":        "gung",
+    "Garlic":        "toi",
+    "Onion":         "hanh",
+    "Carrot":        "ca_rot",
+    "Broccoli":      "bong_cai_xanh",
+    "Pear":          "le",
+    "Peach":         "dao",
+    "Plum":          "man",
+    "Watermelon Rind": "dua_hau",
+}
+
+# Mapping COCO class name → Vietnamese (fallback khi HF không khả dụng)
+_COCO_TO_CLASS: dict[str, str] = {
+    "banana":    "chuoi",
+    "orange":    "cam",
+    "apple":     "tao",
+    "carrot":    "ca_rot",
+    "broccoli":  "bong_cai_xanh",
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helpers dùng chung
+# Per-class confidence post-filter (áp dụng cho cả YOLO + HF)
+# ──────────────────────────────────────────────────────────────────────────────
+_PER_CLASS_CONF: dict[str, float] = {
+    "chuoi":     0.20,   # banana hay bị false-negative ở conf cao
+    "dua":       0.40,   # coconut / pineapple dễ nhầm
+    "mang_cau":  0.40,   # soursop
+}
+_DEFAULT_CONF = 0.25
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _make_id(prefix: str) -> str:
@@ -140,165 +143,181 @@ def _bbox_dict(x1: float, y1: float, x2: float, y2: float,
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GCVDetector
+# YOLOHFDetector
 # ──────────────────────────────────────────────────────────────────────────────
 
-class GCVDetector:
+class YOLOHFDetector:
     """
-    Gọi Google Cloud Vision API và trả về cùng format DetectedObject[]
-    như YOLODetector cũ — frontend không cần thay đổi gì.
+    2-tier detection pipeline:
+      1. YOLO11n (local, offline) → bounding boxes
+      2. HuggingFace free Inference API → crop classification → class name
 
-    Features sử dụng:
-      • OBJECT_LOCALIZATION: Phát hiện + định vị vật thể (bounding box)
-      • LABEL_DETECTION: Nhận diện nhãn bổ sung cho top_k
-
-    Lưu ý:
-      GCV trả về normalizedVertices [0.0, 1.0] thay vì pixel coords.
-      Ta nhân với kích thước ảnh để có pixel coords như YOLO.
+    Fallback: nếu HF không khả dụng (loading / network error) → dùng COCO mapping.
     """
 
-    def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("GCV_API_KEY không được để trống.")
-        self.api_key = api_key
-        # Danh sách classes từ mapping (dùng cho /metadata/classes)
-        self.classes: list[str] = sorted(set(_GCV_TO_CLASS.values()))
-        print(f"[GCVDetector] API key: {api_key[:8]}...{api_key[-4:]}")
-        print(f"[GCVDetector] Mapped classes: {len(self.classes)}")
+    def __init__(self, model_path: str, hf_token: str = ""):
+        from ultralytics import YOLO
+        self.model     = YOLO(model_path)
+        self.hf_token  = hf_token
+        self.model_path = model_path
 
-    # ── Internal: gọi GCV API ─────────────────────────────────────────────────
+        # Tập hợp tất cả class names đã biết
+        all_vn = set(_HF_TO_CLASS.values()) | set(_COCO_TO_CLASS.values())
+        # Thêm tên từ model.names nếu model đã train (74 lớp)
+        if hasattr(self.model, "names"):
+            for n in self.model.names.values():
+                all_vn.add(n)
+        self.classes: list[str] = sorted(all_vn)
 
-    def _call_api(self, image_bytes: bytes) -> dict:
-        """POST base64 image lên GCV và trả về raw JSON response."""
-        b64 = base64.b64encode(image_bytes).decode("utf-8")
-        payload = {
-            "requests": [{
-                "image": {"content": b64},
-                "features": [
-                    {"type": "OBJECT_LOCALIZATION", "maxResults": 50},
-                    {"type": "LABEL_DETECTION",     "maxResults": 20},
-                ],
-            }]
-        }
-        try:
-            resp = http_requests.post(
-                f"{GCV_ENDPOINT}?key={self.api_key}",
-                json=payload,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except http_requests.HTTPError as e:
-            body = ""
+        print(f"[YOLOHFDetector] Model: {model_path}")
+        print(f"[YOLOHFDetector] Classes: {len(self.classes)}")
+        print(f"[YOLOHFDetector] HF token: {'set' if hf_token else 'not set (free tier)'}")
+
+    # ── Internal: crop JPEG bytes ─────────────────────────────────────────────
+
+    def _crop_bytes(self, frame: np.ndarray,
+                    x1: float, y1: float, x2: float, y2: float) -> bytes:
+        """Crop vùng bbox từ numpy BGR image, encode thành JPEG bytes."""
+        crop = frame[int(y1):int(y2), int(x1):int(x2)]
+        if crop.size == 0:
+            return b""
+        _, buf = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        return buf.tobytes()
+
+    # ── Internal: HF classify crop ────────────────────────────────────────────
+
+    def _classify_crop(self, crop_bytes: bytes) -> tuple[str, float]:
+        """
+        Gửi crop lên HF free API.
+        Trả về (vietnamese_class_name, confidence) hoặc ("", 0.0) nếu lỗi.
+        Tự retry 1 lần khi model đang loading (cold start ~20s).
+        """
+        if not crop_bytes:
+            return "", 0.0
+
+        headers: dict[str, str] = {"Content-Type": "image/jpeg"}
+        if self.hf_token:
+            headers["Authorization"] = f"Bearer {self.hf_token}"
+
+        for attempt in range(2):
             try:
-                body = e.response.text[:300]
-            except Exception:
-                pass
-            raise RuntimeError(f"GCV API HTTP {e.response.status_code}: {body}") from e
+                resp = http_requests.post(
+                    _HF_API_URL,
+                    headers=headers,
+                    data=crop_bytes,
+                    timeout=30,
+                )
+                data = resp.json()
 
-    # ── Internal: map GCV response → DetectedObject[] ────────────────────────
+                # HF cold start: {"error": "Model ... is currently loading"}
+                if (isinstance(data, dict)
+                        and "error" in data
+                        and "loading" in data.get("error", "").lower()):
+                    if attempt == 0:
+                        print("[YOLOHFDetector] HF model loading, waiting 8s...")
+                        time.sleep(8)
+                        continue
+                    break  # vẫn loading sau retry → fallback
 
-    def _map_response(
-        self,
-        gcv_data: dict,
-        img_w: int,
-        img_h: int,
-        conf_threshold: float = 0.0,
-    ) -> list[dict]:
-        """
-        Chuyển localizedObjectAnnotations của GCV sang DetectedObject[].
-        Nếu GCV trả lỗi hoặc không có kết quả → trả list rỗng.
-        """
-        response = gcv_data.get("responses", [{}])[0]
-        if "error" in response:
-            err = response["error"]
-            raise RuntimeError(f"GCV error {err.get('code')}: {err.get('message')}")
+                # Kết quả thành công: [{label: "Banana", score: 0.98}, ...]
+                if isinstance(data, list) and data:
+                    top   = data[0]
+                    label = top.get("label", "")
+                    score = float(top.get("score", 0.0))
+                    # Ánh xạ HF label → Vietnamese
+                    class_name = _HF_TO_CLASS.get(
+                        label,
+                        label.lower().replace(" ", "_")
+                    )
+                    return class_name, score
 
-        # Nhãn bổ sung từ LABEL_DETECTION (dùng cho top_k)
-        label_annotations = response.get("labelAnnotations", [])
-        extra_labels = [
-            {
-                "class_name": _GCV_TO_CLASS.get(la["description"], la["description"].lower()),
-                "class_id": 0,
-                "confidence": round(la["score"], 4),
-            }
-            for la in label_annotations[:5]
-        ]
+            except Exception as e:
+                print(f"[YOLOHFDetector] HF error (attempt {attempt}): {e}")
+                break
 
-        objects: list[dict] = []
-        localizations = response.get("localizedObjectAnnotations", [])
-
-        for i, loc in enumerate(localizations):
-            gcv_name = loc.get("name", "")
-            score    = float(loc.get("score", 0.0))
-
-            if score < conf_threshold:
-                continue
-
-            # Ánh xạ tên GCV → class name Việt
-            class_name = _GCV_TO_CLASS.get(gcv_name)
-            if class_name is None:
-                # Fallback: lowercase + underscore
-                class_name = gcv_name.lower().replace(" ", "_")
-
-            class_id = (
-                self.classes.index(class_name)
-                if class_name in self.classes else i
-            )
-
-            # normalizedVertices → pixel bbox
-            verts  = loc.get("boundingPoly", {}).get("normalizedVertices", [])
-            xs     = [v.get("x", 0.0) for v in verts]
-            ys     = [v.get("y", 0.0) for v in verts]
-            x_min  = min(xs) if xs else 0.0
-            x_max  = max(xs) if xs else 0.0
-            y_min  = min(ys) if ys else 0.0
-            y_max  = max(ys) if ys else 0.0
-
-            x1 = x_min * img_w
-            y1 = y_min * img_h
-            x2 = x_max * img_w
-            y2 = y_max * img_h
-
-            objects.append({
-                "id":          _make_id("obj"),
-                "class_id":    class_id,
-                "class_name":  class_name,
-                "confidence":  round(score, 4),
-                "bbox":        _bbox_dict(x1, y1, x2, y2, img_w, img_h),
-                "top_k":       [
-                    {
-                        "class_name": class_name,
-                        "class_id":   class_id,
-                        "confidence": round(score, 4),
-                    },
-                    *extra_labels[:2],
-                ],
-            })
-
-        return objects
+        return "", 0.0
 
     # ── Public: detect image ──────────────────────────────────────────────────
 
     def detect_image(
         self,
         image_bytes: bytes,
-        conf: float    = 0.25,
-        iou: float     = 0.50,   # không dùng (GCV xử lý NMS nội bộ)
-        max_det: int   = 100,
+        conf: float     = 0.25,
+        iou: float      = 0.50,
+        max_det: int    = 100,
         session_id: str = "",
-        augment: bool  = False,  # không dùng
+        augment: bool   = False,
     ) -> dict:
-        img     = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # 1. Decode image
+        img         = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img_w, img_h = img.size
 
-        t0       = time.perf_counter()
-        gcv_data = self._call_api(image_bytes)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is None:
+            # Fallback: convert PIL → numpy BGR
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
+        # 2. YOLO detection
+        t0      = time.perf_counter()
+        results = self.model(
+            frame,
+            conf=conf,
+            iou=iou,
+            max_det=max_det,
+            verbose=False,
+            augment=augment,
+        )
+        boxes = results[0].boxes
+
+        objects: list[dict] = []
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            yolo_conf  = float(box.conf[0])
+            coco_name  = results[0].names[int(box.cls[0])]
+
+            # 3. Crop → HF classify
+            crop_b          = self._crop_bytes(frame, x1, y1, x2, y2)
+            hf_name, hf_conf = self._classify_crop(crop_b)
+
+            # 4. Chọn class name: HF > YOLO trained name > COCO mapping
+            if hf_name:
+                class_name = hf_name
+                confidence = max(yolo_conf, hf_conf)
+            else:
+                # Nếu model đã trained 74 lớp VN, dùng YOLO name trực tiếp
+                if coco_name in self.classes:
+                    class_name = coco_name
+                else:
+                    class_name = _COCO_TO_CLASS.get(coco_name, coco_name)
+                confidence = yolo_conf
+
+            # 5. Per-class confidence filter
+            min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
+            if confidence < min_conf:
+                continue
+
+            class_id = (
+                self.classes.index(class_name)
+                if class_name in self.classes else i
+            )
+
+            objects.append({
+                "id":         _make_id("obj"),
+                "class_id":   class_id,
+                "class_name": class_name,
+                "confidence": round(confidence, 4),
+                "bbox":       _bbox_dict(x1, y1, x2, y2, img_w, img_h),
+                "top_k": [
+                    {
+                        "class_name": class_name,
+                        "class_id":   class_id,
+                        "confidence": round(confidence, 4),
+                    }
+                ],
+            })
+
         inference_ms = (time.perf_counter() - t0) * 1000
-
-        objects = self._map_response(gcv_data, img_w, img_h, conf_threshold=conf)
-        objects = objects[:max_det]
-
         return {
             "session_id":        session_id,
             "image_width":       img_w,
@@ -308,7 +327,7 @@ class GCVDetector:
             "created_at":        datetime.now(timezone.utc).isoformat(),
         }
 
-    # ── Public: detect frame (realtime WebSocket) ─────────────────────────────
+    # ── Public: detect frame (realtime WebSocket — YOLO only) ─────────────────
 
     def detect_frame(
         self,
@@ -325,16 +344,46 @@ class GCVDetector:
 
         img_h, img_w = frame.shape[:2]
 
-        # Encode lại thành JPEG để gửi lên GCV
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        jpeg_bytes = buf.tobytes()
+        t0      = time.perf_counter()
+        results = self.model(frame, conf=conf, iou=iou, verbose=False)
+        boxes   = results[0].boxes
 
-        t0       = time.perf_counter()
-        gcv_data = self._call_api(jpeg_bytes)
+        objects: list[dict] = []
+        for i, box in enumerate(boxes):
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            yolo_conf = float(box.conf[0])
+            coco_name = results[0].names[int(box.cls[0])]
+
+            if coco_name in self.classes:
+                class_name = coco_name
+            else:
+                class_name = _COCO_TO_CLASS.get(coco_name, coco_name)
+
+            # Per-class conf filter
+            min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
+            if yolo_conf < min_conf:
+                continue
+
+            class_id = (
+                self.classes.index(class_name)
+                if class_name in self.classes else i
+            )
+
+            objects.append({
+                "id":         _make_id("obj"),
+                "class_id":   class_id,
+                "class_name": class_name,
+                "confidence": round(yolo_conf, 4),
+                "bbox":       _bbox_dict(x1, y1, x2, y2, img_w, img_h),
+                "top_k": [{
+                    "class_name": class_name,
+                    "class_id":   class_id,
+                    "confidence": round(yolo_conf, 4),
+                }],
+            })
+
         inference_ms = (time.perf_counter() - t0) * 1000
-
-        objects = self._map_response(gcv_data, img_w, img_h, conf_threshold=conf)
-        fps     = round(1000.0 / inference_ms, 1) if inference_ms > 0 else 0.0
+        fps = round(1000.0 / inference_ms, 1) if inference_ms > 0 else 0.0
 
         return {
             "frame_id":          frame_id,
@@ -343,7 +392,7 @@ class GCVDetector:
             "fps":               fps,
         }
 
-    # ── Public: detect video ──────────────────────────────────────────────────
+    # ── Public: detect video (YOLO only per frame) ────────────────────────────
 
     def detect_video(
         self,
@@ -353,7 +402,7 @@ class GCVDetector:
         session_id: str = "",
         progress_cb: Optional[Callable[[int], None]] = None,
     ) -> dict:
-        MAX_FRAMES = 20   # Giới hạn để tiết kiệm quota GCV
+        MAX_FRAMES = 50
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
             tmp.write(video_bytes)
@@ -371,8 +420,8 @@ class GCVDetector:
 
             step           = max(1, total_frames // MAX_FRAMES)
             sample_indices = list(range(0, total_frames, step))[:MAX_FRAMES]
-            frames_result  = []
-            total_inf_ms   = 0.0
+            frames_result: list[dict] = []
+            total_inf_ms  = 0.0
 
             for prog_i, frame_idx in enumerate(sample_indices):
                 cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -383,15 +432,44 @@ class GCVDetector:
                 img_h, img_w = frame.shape[:2]
                 timestamp    = frame_idx / fps_source
 
-                _, buf       = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                jpeg_bytes   = buf.tobytes()
-
-                t0       = time.perf_counter()
-                gcv_data = self._call_api(jpeg_bytes)
-                inf_ms   = (time.perf_counter() - t0) * 1000
+                t0      = time.perf_counter()
+                results = self.model(frame, conf=conf, iou=iou, verbose=False)
+                inf_ms  = (time.perf_counter() - t0) * 1000
                 total_inf_ms += inf_ms
 
-                objects = self._map_response(gcv_data, img_w, img_h, conf_threshold=conf)
+                boxes   = results[0].boxes
+                objects: list[dict] = []
+
+                for i, box in enumerate(boxes):
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    yolo_conf = float(box.conf[0])
+                    coco_name = results[0].names[int(box.cls[0])]
+
+                    if coco_name in self.classes:
+                        class_name = coco_name
+                    else:
+                        class_name = _COCO_TO_CLASS.get(coco_name, coco_name)
+
+                    min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
+                    if yolo_conf < min_conf:
+                        continue
+
+                    class_id = (
+                        self.classes.index(class_name)
+                        if class_name in self.classes else i
+                    )
+                    objects.append({
+                        "id":         _make_id("obj"),
+                        "class_id":   class_id,
+                        "class_name": class_name,
+                        "confidence": round(yolo_conf, 4),
+                        "bbox":       _bbox_dict(x1, y1, x2, y2, img_w, img_h),
+                        "top_k": [{
+                            "class_name": class_name,
+                            "class_id":   class_id,
+                            "confidence": round(yolo_conf, 4),
+                        }],
+                    })
 
                 frames_result.append({
                     "frame_index":       frame_idx,
@@ -439,15 +517,45 @@ class GCVDetector:
 # Factory: load detector từ env var
 # ──────────────────────────────────────────────────────────────────────────────
 
-def resolve_detector() -> "GCVDetector":
+def resolve_detector() -> "YOLOHFDetector":
     """
-    Đọc GCV_API_KEY từ biến môi trường và trả về GCVDetector đã khởi tạo.
-    Raise ValueError nếu key chưa được cấu hình.
+    Đọc YOLO_MODEL_PATH + HF_TOKEN từ env, trả về YOLOHFDetector đã init.
+    Tự tìm best.pt → yolo11n.pt nếu YOLO_MODEL_PATH không đặt.
     """
-    api_key = os.getenv("GCV_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError(
-            "GCV_API_KEY chưa được cấu hình.\n"
-            "Fix: export GCV_API_KEY=<your-api-key> hoặc thêm vào file .env"
-        )
-    return GCVDetector(api_key)
+    model_path_env = os.getenv("YOLO_MODEL_PATH", "").strip()
+
+    if model_path_env:
+        candidates = [model_path_env]
+    else:
+        # Tự khám phá
+        base = Path(__file__).parent
+        candidates = [
+            # Custom trained 74-class model
+            str(base.parent.parent.parent / "ultralytics" / "runs" / "detect" / "train" / "weights" / "best.pt"),
+            r"c:\Users\Admin\Downloads\Study\Study\Detect_VNese_Props\ultralytics\runs\detect\train\weights\best.pt",
+            r"d:\Study\Detect_VNese_Props\ultralytics\runs\detect\train\weights\best.pt",
+            # COCO pretrained fallback
+            str(base.parent.parent / "yolo11n.pt"),
+            str(base.parent / "yolo11n.pt"),
+            "yolo11n.pt",
+        ]
+
+    model_path = None
+    for c in candidates:
+        if Path(c).exists():
+            model_path = c
+            break
+
+    if model_path is None:
+        # ultralytics sẽ tự download yolo11n.pt nếu không tìm thấy
+        model_path = "yolo11n.pt"
+        print(f"[resolve_detector] No model found, using default '{model_path}' (will auto-download)")
+    else:
+        print(f"[resolve_detector] Found model: {model_path}")
+
+    hf_token = os.getenv("HF_TOKEN", "").strip()
+    return YOLOHFDetector(model_path=model_path, hf_token=hf_token)
+
+
+# Backward-compat alias (app.py hiện tại import GCVDetector)
+GCVDetector = YOLOHFDetector

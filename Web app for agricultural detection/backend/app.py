@@ -1,5 +1,5 @@
 """
-Flask backend — Vietnamese agricultural product detection via Google Cloud Vision API.
+Flask backend — Vietnamese agricultural product detection via YOLO11n + HuggingFace.
 
 HTTP endpoints:
   GET  /health
@@ -15,7 +15,8 @@ Native WebSocket (flask-sock):
   server → JSON string (RealtimeDetectionResult)
 
 Cấu hình (biến môi trường):
-  GCV_API_KEY   — Google Cloud Vision API key (bắt buộc)
+  YOLO_MODEL_PATH  — đường dẫn tới .pt file (tự tìm nếu không đặt)
+  HF_TOKEN         — HuggingFace token (tùy chọn)
 """
 
 import json
@@ -28,7 +29,7 @@ from pathlib import Path
 # Load .env file nếu có (trước khi import detection)
 _env_file = Path(__file__).parent / ".env"
 if _env_file.exists():
-    for _line in _env_file.read_text().splitlines():
+    for _line in _env_file.read_text(encoding="utf-8", errors="ignore").splitlines():
         _line = _line.strip()
         if _line and not _line.startswith("#") and "=" in _line:
             _k, _v = _line.split("=", 1)
@@ -38,7 +39,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sock import Sock
 
-from detection import GCVDetector, resolve_detector
+from detection import YOLOHFDetector, resolve_detector
 from sessions import store as session_store
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -50,23 +51,24 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 sock = Sock(app)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Load GCV detector at startup
+# Load YOLO+HF detector at startup
 # ──────────────────────────────────────────────────────────────────────────────
 
 _start_time = time.time()
-_detector: GCVDetector | None = None
+_detector: YOLOHFDetector | None = None
 _detector_error: str = ""
 
 try:
     _detector = resolve_detector()
     print(f"\n{'='*60}")
-    print(f"[backend] GCV detector loaded successfully.")
+    print(f"[backend] YOLO+HF detector loaded successfully.")
+    print(f"[backend] Model path: {_detector.model_path}")
     print(f"[backend] Mapped classes: {len(_detector.classes)}")
     print(f"[backend] Sample classes: {_detector.classes[:10]}")
     print(f"{'='*60}\n")
 except Exception as exc:
     _detector_error = str(exc)
-    print(f"[backend] ✗ FATAL: Could not init GCV detector — {exc}")
+    print(f"[backend] ✗ FATAL: Could not init YOLO detector — {exc}")
     traceback.print_exc()
     print("[backend] All detection endpoints will return 503 until restart.")
 
@@ -80,18 +82,18 @@ def health():
     return jsonify({
         "status":        "ok" if _detector else "error",
         "model_loaded":  _detector is not None,
-        "model_path":    "Google Cloud Vision API",
+        "model_path":    _detector.model_path if _detector else "",
         "model_error":   _detector_error,
         "classes_count": len(_detector.classes) if _detector else 0,
         "class_sample":  _detector.classes[:10] if _detector else [],
-        "version":       "2.0.0",
+        "version":       "3.0.0",
         "uptime_seconds": round(time.time() - _start_time, 1),
     })
 
 
 def _require_detector():
     if _detector is None:
-        return jsonify({"error": f"GCV detector not loaded: {_detector_error}"}), 503
+        return jsonify({"error": f"YOLO detector not loaded: {_detector_error}"}), 503
     return None, None
 
 
@@ -220,7 +222,7 @@ def realtime(ws):
                 ws.send(json.dumps({
                     "frame_id": frame_id, "objects": [],
                     "inference_time_ms": 0.0, "fps": 0.0,
-                    "error": f"GCV detector not loaded: {_detector_error}",
+                    "error": f"YOLO detector not loaded: {_detector_error}",
                 }))
                 frame_id += 1
                 continue
