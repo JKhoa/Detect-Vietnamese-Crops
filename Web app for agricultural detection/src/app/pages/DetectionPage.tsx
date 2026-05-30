@@ -15,7 +15,6 @@ import VideoUploadMobile from '../components/detection/VideoUploadMobile';
 type TabKey = 'camera' | 'image' | 'video';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode; mobileLabel: string }[] = [
-  { key: 'camera', label: 'Camera Realtime', mobileLabel: 'Camera', icon: <Camera size={16} /> },
   { key: 'image', label: 'Upload Ảnh', mobileLabel: 'Ảnh', icon: <ImageIcon size={16} /> },
   { key: 'video', label: 'Upload Video', mobileLabel: 'Video', icon: <Video size={16} /> },
 ];
@@ -24,7 +23,7 @@ export default function DetectionPage() {
   const { mode } = useParams<{ mode: TabKey }>();
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
-  const activeTab: TabKey = (mode as TabKey) || 'camera';
+  const activeTab: TabKey = (mode as TabKey) || 'image';
 
   const handleTab = (key: TabKey) => navigate(`/detect/${key}`);
 
@@ -52,7 +51,6 @@ export default function DetectionPage() {
 
         {/* Content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === 'camera' && <RealtimeCameraDesktop />}
           {activeTab === 'image' && <ImageUploadDesktop />}
           {activeTab === 'video' && <VideoUploadDesktop />}
         </div>
@@ -64,7 +62,6 @@ export default function DetectionPage() {
   // Just render the active mode content
   return (
     <div className="h-full overflow-y-auto">
-      {activeTab === 'camera' && <RealtimeCameraMobile />}
       {activeTab === 'image' && <ImageUploadMobile />}
       {activeTab === 'video' && <VideoUploadMobile />}
     </div>

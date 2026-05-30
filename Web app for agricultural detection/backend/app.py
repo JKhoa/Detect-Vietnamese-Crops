@@ -40,6 +40,7 @@ from flask_cors import CORS
 from flask_sock import Sock
 
 from detection import YOLOHFDetector, resolve_detector
+from ensemble import resolve_ensemble_detector
 from sessions import store as session_store
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -59,7 +60,13 @@ _detector: YOLOHFDetector | None = None
 _detector_error: str = ""
 
 try:
-    _detector = resolve_detector()
+    # Ưu tiên ensemble (primary best.pt + secondary yolov8n-oiv7.pt).
+    # Fallback sang single-model nếu ensemble lỗi.
+    try:
+        _detector = resolve_ensemble_detector()
+    except Exception as ens_exc:
+        print(f"[backend] Ensemble init failed ({ens_exc}); falling back to single model.")
+        _detector = resolve_detector()
     print(f"\n{'='*60}")
     print(f"[backend] YOLO+HF detector loaded successfully.")
     print(f"[backend] Model path: {_detector.model_path}")
@@ -213,10 +220,20 @@ def realtime(ws):
     }))
 
     try:
+        active_model = "ensemble"
         while True:
             data = ws.receive()
             if data is None:
                 break
+
+            if isinstance(data, str):
+                try:
+                    msg = json.loads(data)
+                    if msg.get("type") == "config":
+                        active_model = msg.get("model", "ensemble")
+                except Exception:
+                    pass
+                continue
 
             if _detector is None:
                 ws.send(json.dumps({
@@ -227,10 +244,11 @@ def realtime(ws):
                 frame_id += 1
                 continue
 
-            frame_bytes = (data if isinstance(data, (bytes, bytearray))
-                           else data.encode())
+            frame_bytes = data
+            print(f"[app] WS received message of type {type(data)} size {len(data)}")
             try:
-                result = _detector.detect_frame(bytes(frame_bytes), frame_id=frame_id)
+                result = _detector.detect_frame(bytes(frame_bytes), frame_id=frame_id, model_target=active_model)
+                print(f"[app] detect_frame returned {len(result.get('objects', []))} objects")
             except Exception as exc:
                 traceback.print_exc()
                 ws.send(json.dumps({

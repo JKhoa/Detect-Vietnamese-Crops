@@ -13,12 +13,14 @@ export interface TopKPrediction {
   class_name: string;
   class_id: number;
   confidence: number;
+  display_name?: string;
 }
 
 export interface DetectedObject {
   id: string;
   class_id: number;
   class_name: string;
+  display_name?: string;
   confidence: number;
   bbox: BoundingBox;
   top_k: TopKPrediction[];

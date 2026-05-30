@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Upload, Video, Play, AlertCircle, RotateCcw,
   Clock, Layers, Film, BarChart2, Download
@@ -7,8 +7,14 @@ import type { VideoDetectionResult, DetectionFrame } from '../../types';
 import { detectVideo } from '../../services/mockApi';
 import { getMetadata } from '../../data/metadata';
 
+const BOX_COLORS = [
+  '#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6',
+  '#06b6d4', '#f97316', '#10b981', '#ef4444', '#84cc16',
+];
+
 export default function VideoUploadDesktop() {
   const [file, setFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [result, setResult] = useState<VideoDetectionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -16,7 +22,11 @@ export default function VideoUploadDesktop() {
   const [dragOver, setDragOver] = useState(false);
   const [conf, setConf] = useState(0.5);
   const [selectedFrame, setSelectedFrame] = useState<DetectionFrame | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
 
   const handleFile = useCallback((f: File) => {
     const allowed = ['video/mp4', 'video/quicktime', 'video/avi', 'video/x-msvideo', 'video/webm'];
@@ -32,7 +42,86 @@ export default function VideoUploadDesktop() {
     setResult(null);
     setSelectedFrame(null);
     setFile(f);
-  }, []);
+    
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    setVideoUrl(URL.createObjectURL(f));
+  }, [videoUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (videoUrl) URL.revokeObjectURL(videoUrl);
+    };
+  }, [videoUrl]);
+
+  const drawDetections = useCallback(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video || !result) {
+      animRef.current = requestAnimationFrame(drawDetections);
+      return;
+    }
+
+    const w = video.videoWidth || 640;
+    const h = video.videoHeight || 480;
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const currentTime = video.currentTime;
+    
+    let currentFrame = result.frames[0];
+    for (let i = 0; i < result.frames.length; i++) {
+       if (result.frames[i].timestamp <= currentTime) {
+           currentFrame = result.frames[i];
+       } else {
+           break;
+       }
+    }
+
+    if (currentFrame && currentFrame.objects) {
+      currentFrame.objects.forEach((obj, i) => {
+        if (obj.confidence < conf) return;
+        const color = BOX_COLORS[i % BOX_COLORS.length];
+        const { x1, y1, x2, y2 } = obj.bbox;
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 6;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = color + '25';
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+
+        const meta = getMetadata(obj.class_name);
+        const label = `${meta?.emoji || '🌿'} ${meta?.name_vi || obj.class_name} ${(obj.confidence * 100).toFixed(0)}%`;
+        ctx.font = 'bold 14px Inter, sans-serif';
+        const tw = ctx.measureText(label).width;
+        const lh = 22;
+        const ly = y1 > lh + 2 ? y1 - lh - 1 : y1 + 2;
+        ctx.fillStyle = color + 'dd';
+        ctx.beginPath();
+        ctx.roundRect(x1, ly, tw + 10, lh, 4);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(label, x1 + 5, ly + lh - 6);
+      });
+    }
+
+    animRef.current = requestAnimationFrame(drawDetections);
+  }, [result, conf]);
+
+  useEffect(() => {
+    animRef.current = requestAnimationFrame(drawDetections);
+    return () => cancelAnimationFrame(animRef.current);
+  }, [drawDetections]);
 
   const handleDetect = async () => {
     if (!file) return;
@@ -44,6 +133,12 @@ export default function VideoUploadDesktop() {
       setResult(res);
       const firstWithObjects = res.frames.find(f => f.objects.length > 0);
       setSelectedFrame(firstWithObjects || res.frames[0] || null);
+      
+      // Auto play video when detection is done
+      if (videoRef.current) {
+         videoRef.current.currentTime = 0;
+         videoRef.current.play().catch(e => console.log("Autoplay prevented", e));
+      }
     } catch {
       setError('Lỗi xử lý video. Kiểm tra backend server.');
     } finally {
@@ -53,11 +148,21 @@ export default function VideoUploadDesktop() {
 
   const handleReset = () => {
     setFile(null);
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
+    setVideoUrl(null);
     setResult(null);
     setError(null);
     setProgress(0);
     setSelectedFrame(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFrameClick = (frame: DetectionFrame) => {
+    setSelectedFrame(frame);
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = frame.timestamp;
+    }
   };
 
   const uniqueClasses = result
@@ -146,7 +251,7 @@ export default function VideoUploadDesktop() {
         ) : (
           <div className="flex-1 flex flex-col gap-4 min-h-0">
             {/* File info */}
-            <div className="bg-white rounded-xl border border-blue-100 p-4 flex items-center gap-4">
+            <div className="bg-white rounded-xl border border-blue-100 p-4 flex items-center gap-4 flex-shrink-0">
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
                 <Video size={24} className="text-blue-600" />
               </div>
@@ -165,9 +270,9 @@ export default function VideoUploadDesktop() {
 
             {/* Progress */}
             {loading && (
-              <div className="bg-white rounded-xl border border-green-100 p-5">
+              <div className="bg-white rounded-xl border border-green-100 p-5 flex-shrink-0">
                 <div className="flex items-center justify-between mb-3">
-                  <span style={{ fontWeight: 600 }} className="text-gray-700">Đang xử lý video...</span>
+                  <span style={{ fontWeight: 600 }} className="text-gray-700">Đang phân tích video...</span>
                   <span style={{ fontWeight: 700 }} className="text-green-600">{progress}%</span>
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-3">
@@ -176,35 +281,31 @@ export default function VideoUploadDesktop() {
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <p style={{ fontSize: '0.75rem' }} className="text-gray-400 mt-2">
-                  Xử lý frame theo lô · YOLO detection · conf={conf.toFixed(2)}
-                </p>
               </div>
             )}
 
-            {/* Results summary */}
-            {result && (
-              <div className="grid grid-cols-4 gap-3">
-                {[
-                  { label: 'Tổng frames', value: result.total_frames, icon: <Layers size={18} /> },
-                  { label: 'Thời lượng', value: `${result.duration_seconds.toFixed(1)}s`, icon: <Clock size={18} /> },
-                  { label: 'FPS gốc', value: result.fps, icon: <Play size={18} /> },
-                  { label: 'Loại phát hiện', value: uniqueClasses.length, icon: <BarChart2 size={18} /> },
-                ].map((s, i) => (
-                  <div key={i} className="bg-white rounded-xl border border-green-100 p-3 flex items-center gap-2">
-                    <span className="text-green-500">{s.icon}</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '1rem' }} className="text-gray-800">{s.value}</div>
-                      <div style={{ fontSize: '0.65rem' }} className="text-gray-400">{s.label}</div>
-                    </div>
-                  </div>
-                ))}
+            {/* Video Player */}
+            {videoUrl && (
+              <div className="flex-1 bg-black rounded-2xl overflow-hidden relative min-h-0 min-h-[300px]">
+                <video
+                  ref={videoRef}
+                  src={videoUrl}
+                  controls={!!result}
+                  className="absolute inset-0 w-full h-full object-contain"
+                />
+                {result && (
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full object-contain"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
               </div>
             )}
 
             {/* Detected classes */}
             {result && uniqueClasses.length > 0 && (
-              <div className="bg-white rounded-xl border border-green-100 p-4">
+              <div className="bg-white rounded-xl border border-green-100 p-4 flex-shrink-0">
                 <p style={{ fontWeight: 600, fontSize: '0.8rem' }} className="text-gray-700 mb-3">
                   Nông sản phát hiện được
                 </p>
@@ -230,8 +331,6 @@ export default function VideoUploadDesktop() {
               </div>
             )}
 
-            {/* Spacer */}
-            <div className="flex-1" />
           </div>
         )}
 
@@ -305,7 +404,7 @@ export default function VideoUploadDesktop() {
           {framesWithObjects.map((frame) => (
             <button
               key={frame.frame_index}
-              onClick={() => setSelectedFrame(frame)}
+              onClick={() => handleFrameClick(frame)}
               className={`w-full text-left p-3 rounded-xl border transition-all ${
                 selectedFrame?.frame_index === frame.frame_index
                   ? 'border-green-500 bg-green-50'
@@ -321,7 +420,7 @@ export default function VideoUploadDesktop() {
                 </span>
               </div>
               <div className="flex flex-wrap gap-1">
-                {frame.objects.map((obj, i) => {
+                {frame.objects.filter(o => o.confidence >= conf).map((obj, i) => {
                   const meta = getMetadata(obj.class_name);
                   return (
                     <span
@@ -336,7 +435,7 @@ export default function VideoUploadDesktop() {
               </div>
               <div className="flex items-center gap-2 mt-1.5">
                 <span style={{ fontSize: '0.65rem' }} className="text-gray-400">
-                  {frame.objects.length} đối tượng · {frame.inference_time_ms.toFixed(0)}ms
+                  {frame.objects.filter(o => o.confidence >= conf).length} đối tượng · {frame.inference_time_ms.toFixed(0)}ms
                 </span>
               </div>
             </button>
@@ -347,10 +446,10 @@ export default function VideoUploadDesktop() {
         {selectedFrame && (
           <div className="border-t border-green-100 p-4 bg-green-50 max-h-48 overflow-y-auto">
             <p style={{ fontWeight: 600, fontSize: '0.78rem' }} className="text-green-800 mb-2">
-              Frame {selectedFrame.frame_index} · {selectedFrame.objects.length} đối tượng
+              Frame {selectedFrame.frame_index} · {selectedFrame.objects.filter(o => o.confidence >= conf).length} đối tượng
             </p>
             <div className="space-y-1">
-              {selectedFrame.objects.map((obj, i) => {
+              {selectedFrame.objects.filter(o => o.confidence >= conf).map((obj, i) => {
                 const meta = getMetadata(obj.class_name);
                 return (
                   <div key={i} className="flex items-center gap-2">

@@ -5,13 +5,15 @@ import { detectImage } from '../../services/mockApi';
 import BoundingBoxCanvas from './BoundingBoxCanvas';
 import ProductMetadataCard from '../product/ProductMetadataCard';
 
+type DetectMode = 'multi' | 'single';
+
 export default function ImageUploadMobile() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<ImageDetectionResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [conf, setConf] = useState(0.5);
+  const [mode, setMode] = useState<DetectMode>('multi');
   const [showSettings, setShowSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -32,7 +34,10 @@ export default function ImageUploadMobile() {
     setLoading(true);
     setError(null);
     try {
-      const res = await detectImage(file, conf);
+      const conf = mode === 'single' ? 0.10 : 0.20;
+      const iou = 0.45;
+      const maxDet = mode === 'single' ? 1 : 100;
+      const res = await detectImage(file, conf, iou, maxDet);
       setResult(res);
     } catch {
       setError('Lỗi kết nối. Kiểm tra server backend.');
@@ -58,21 +63,29 @@ export default function ImageUploadMobile() {
           className="w-full flex items-center gap-2 px-4 py-3 text-gray-700"
           style={{ fontSize: '0.8rem', fontWeight: 500 }}
         >
-          <span>⚙️ Conf: {conf.toFixed(2)}</span>
+          <span>⚙️ Chế độ nhận diện</span>
           {showSettings ? <ChevronUp size={14} className="ml-auto" /> : <ChevronDown size={14} className="ml-auto" />}
         </button>
         {showSettings && (
-          <div className="px-4 pb-3 flex items-center gap-3">
-            <label style={{ fontSize: '0.75rem' }} className="text-gray-500 w-16">Confidence</label>
-            <input
-              type="range" min={0.1} max={0.95} step={0.05}
-              value={conf}
-              onChange={e => setConf(+e.target.value)}
-              className="flex-1 accent-green-500"
-            />
-            <span style={{ fontSize: '0.75rem', fontWeight: 700 }} className="text-green-600 w-10">
-              {conf.toFixed(2)}
-            </span>
+          <div className="px-4 pb-3 flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-gray-700" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={mode === 'multi'}
+                onChange={() => setMode('multi')}
+                className="accent-green-600"
+              />
+              Nhận diện nhiều trái cây
+            </label>
+            <label className="flex items-center gap-2 text-gray-700" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={mode === 'single'}
+                onChange={() => setMode('single')}
+                className="accent-green-600"
+              />
+              Nhận diện 1 trái cây
+            </label>
           </div>
         )}
       </div>

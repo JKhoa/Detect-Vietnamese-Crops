@@ -27,19 +27,55 @@ export default function ProductMetadataCard({ object, compact = false }: Props) 
     : 'Không chắc chắn';
 
   if (!meta) {
+    const prettyName = object.display_name || object.class_name.replace(/_/g, ' ');
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center gap-2">
-          <Info size={16} className="text-gray-400" />
-          <span className="text-gray-600" style={{ fontSize: '0.875rem' }}>
-            {object.class_name} — chưa có metadata
-          </span>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-3 bg-gray-50 border-b border-gray-100">
+          <Info size={16} className="text-gray-500" />
+          <div className="min-w-0 flex-1">
+            <p className="text-gray-900" style={{ fontSize: '0.95rem', fontWeight: 600 }}>
+              {prettyName}
+            </p>
+            <p className="text-gray-500" style={{ fontSize: '0.72rem' }}>
+              Nhãn mô hình: {object.class_name}
+            </p>
+          </div>
           <span
-            className="ml-auto px-2 py-0.5 rounded-full text-white"
+            className="px-2 py-0.5 rounded-full text-white"
             style={{ fontSize: '0.75rem', backgroundColor: confColor }}
           >
             {confPct}%
           </span>
+        </div>
+
+        <div className="px-4 py-3 space-y-3">
+          <p className="text-gray-600" style={{ fontSize: '0.78rem' }}>
+            Chưa có metadata nông sản chi tiết cho nhãn này. Vẫn hiển thị thông tin nhận diện tương ứng.
+          </p>
+
+          {object.top_k && object.top_k.length > 0 && (
+            <div>
+              <p className="text-gray-500 mb-1.5" style={{ fontSize: '0.72rem', fontWeight: 600 }}>
+                Top nhãn gần nhất
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {object.top_k.slice(0, 3).map((k, i) => (
+                  <span key={i} className="px-2 py-1 rounded-md bg-gray-100 text-gray-700" style={{ fontSize: '0.7rem' }}>
+                    {(k.display_name || k.class_name).replace(/_/g, ' ')} ({(k.confidence * 100).toFixed(0)}%)
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-1.5 text-gray-600" style={{ fontSize: '0.72rem' }}>
+            <span>x1: <b className="text-gray-800">{object.bbox.x1.toFixed(0)}px</b></span>
+            <span>y1: <b className="text-gray-800">{object.bbox.y1.toFixed(0)}px</b></span>
+            <span>x2: <b className="text-gray-800">{object.bbox.x2.toFixed(0)}px</b></span>
+            <span>y2: <b className="text-gray-800">{object.bbox.y2.toFixed(0)}px</b></span>
+            <span>w: <b className="text-gray-800">{(object.bbox.w_norm * 100).toFixed(1)}%</b></span>
+            <span>h: <b className="text-gray-800">{(object.bbox.h_norm * 100).toFixed(1)}%</b></span>
+          </div>
         </div>
       </div>
     );
@@ -58,9 +94,6 @@ export default function ProductMetadataCard({ object, compact = false }: Props) 
             <h3 style={{ fontWeight: 700, fontSize: '1rem' }} className="text-gray-900">
               {meta.name_vi}
             </h3>
-            <span className="text-gray-400" style={{ fontSize: '0.8rem' }}>
-              {meta.name_en}
-            </span>
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <span
@@ -115,7 +148,7 @@ export default function ProductMetadataCard({ object, compact = false }: Props) 
               >
                 <Star size={10} className="text-amber-400" />
                 <span style={{ fontSize: '0.65rem' }} className="text-gray-700">
-                  {k.class_name}
+                  {k.display_name || k.class_name.replace(/_/g, ' ')}
                 </span>
                 <span style={{ fontSize: '0.65rem', fontWeight: 600 }} className="text-gray-500">
                   {(k.confidence * 100).toFixed(0)}%

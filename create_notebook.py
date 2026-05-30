@@ -1,0 +1,197 @@
+import json
+
+notebook = {
+    "cells": [
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "# ĐỒ ÁN MÔN HỌC: CÁC PHƯƠNG PHÁP HỌC MÁY\n",
+                "## Đề tài: Ứng dụng Học máy trong Xây dựng Hệ thống Nhận diện Nông sản Việt Nam\n",
+                "\n",
+                "**Thành viên thực hiện:**\n",
+                "- Nguyễn Hoàng Anh Khoa (2212394)\n",
+                "- Phan Thanh Khải (2212386)\n",
+                "- Phan Thái Bảo (2212345)\n",
+                "- Lê Thành Thái (2212456)\n",
+                "- Nguyễn Tôn Nữ Thu Thanh (2212459)\n",
+                "\n",
+                "**Mô tả:** Notebook này chứa toàn bộ mã nguồn bao gồm: Thu thập dữ liệu từ Hugging Face, Tiền xử lý, Huấn luyện mô hình YOLOv8, và Thực thi chạy thực nghiệm."
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 1. Cài đặt các thư viện cần thiết"
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "!pip install -U ultralytics huggingface_hub opencv-python"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 2. Quá trình Thu thập dữ liệu\n",
+                "Sử dụng thư viện `huggingface_hub` để tải tập dữ liệu \"100 Crops & Plants Object Detection 25k\" từ Hugging Face."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "from huggingface_hub import hf_hub_download\n",
+                "import zipfile\n",
+                "import os\n",
+                "\n",
+                "# Tên repository trên Hugging Face\n",
+                "repo_id = \"devshaheen/100_crops_plants_object_detection_25k_image_dataset\"\n",
+                "filename = \"leaflogic object detection.v5i.yolov5pytorch.zip\"\n",
+                "\n",
+                "# Tải file nén về máy\n",
+                "print(\"Đang tải dữ liệu, vui lòng chờ...\")\n",
+                "file_path = hf_hub_download(repo_id=repo_id, filename=filename, repo_type=\"dataset\")\n",
+                "\n",
+                "# Thư mục đích để giải nén\n",
+                "extract_dir = \"./dataset_nongsan\"\n",
+                "os.makedirs(extract_dir, exist_ok=True)\n",
+                "\n",
+                "# Giải nén tập dữ liệu YOLO\n",
+                "print(\"Đang giải nén tập dữ liệu...\")\n",
+                "with zipfile.ZipFile(file_path, 'r') as zip_ref:\n",
+                "    zip_ref.extractall(extract_dir)\n",
+                "\n",
+                "print(f\"Hoàn tất! Tập dữ liệu đã được giải nén vào thư mục: {extract_dir}\")"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 3. Tiền xử lý Dữ liệu\n",
+                "Tập dữ liệu tải về đã được tác giả format sẵn theo chuẩn YOLOv5/YOLOv8 PyTorch (chứa các thư mục images, labels và file data.yaml). Chúng ta chỉ cần chuẩn bị đường dẫn tới file YAML để bắt đầu huấn luyện."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import yaml\n",
+                "\n",
+                "yaml_path = os.path.join(extract_dir, \"data.yaml\")\n",
+                "print(f\"File cấu trúc dữ liệu: {yaml_path}\")\n",
+                "\n",
+                "with open(yaml_path, 'r') as f:\n",
+                "    data_config = yaml.safe_load(f)\n",
+                "    \n",
+                "print(f\"Số lượng class: {data_config['nc']}\")\n",
+                "print(f\"Danh sách các lớp: {data_config['names']}\")"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 4. Quá trình Huấn luyện Mô hình (Model Training)\n",
+                "Sử dụng YOLOv8s làm cấu trúc cơ sở, tiến hành huấn luyện với các kỹ thuật Augmentation để cải thiện mô hình."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "from ultralytics import YOLO\n",
+                "\n",
+                "# Khởi tạo mô hình YOLOv8s (Small)\n",
+                "model = YOLO('yolov8s.pt')\n",
+                "\n",
+                "# Bắt đầu quá trình huấn luyện\n",
+                "results = model.train(\n",
+                "    data=yaml_path,\n",
+                "    epochs=50,\n",
+                "    imgsz=640,\n",
+                "    batch=16,\n",
+                "    workers=4,\n",
+                "    optimizer='AdamW',\n",
+                "    lr0=0.001,\n",
+                "    mosaic=1.0,  # Bật Data Augmentation (Mosaic)\n",
+                "    mixup=0.2,   # Bật MixUp\n",
+                "    device=0     # Sử dụng GPU\n",
+                ")\n",
+                "\n",
+                "print(\"Quá trình huấn luyện thành công!\")"
+            ]
+        },
+        {
+            "cell_type": "markdown",
+            "metadata": {},
+            "source": [
+                "## 5. Chạy Thực nghiệm và Cải tiến Mô hình (YOLO-World Open Vocabulary)\n",
+                "Thực nghiệm chạy mô hình cơ sở YOLOv8s và ứng dụng biến thể YOLO-World (Zero-shot) cho các loại nông sản không có trong tập dữ liệu huấn luyện."
+            ]
+        },
+        {
+            "cell_type": "code",
+            "execution_count": None,
+            "metadata": {},
+            "outputs": [],
+            "source": [
+                "import cv2\n",
+                "import matplotlib.pyplot as plt\n",
+                "\n",
+                "# 1. Đánh giá mô hình đã huấn luyện\n",
+                "metrics = model.val()\n",
+                "print(f\"mAP@50 (YOLOv8s Baseline): {metrics.box.map50:.3f}\")\n",
+                "\n",
+                "# 2. Thử nghiệm mở rộng không gian nhận dạng với YOLO-World\n",
+                "world_model = YOLO('yolov8s-world.pt')\n",
+                "\n",
+                "# Thêm các lớp nông sản đặc thù chưa được học\n",
+                "custom_classes = data_config['names'] + [\"Avocado\", \"Dragon fruit\", \"Rambutan\", \"Mangosteen\"]\n",
+                "world_model.set_classes(custom_classes)\n",
+                "\n",
+                "# Dự đoán trên ảnh thực tế\n",
+                "test_image_path = \"test_fruit.jpg\"  # Thay đổi thành đường dẫn file ảnh của bạn\n",
+                "try:\n",
+                "    results_world = world_model.predict(test_image_path, conf=0.25, iou=0.45)\n",
+                "    res_plotted = results_world[0].plot()\n",
+                "    plt.figure(figsize=(10, 10))\n",
+                "    plt.imshow(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))\n",
+                "    plt.axis('off')\n",
+                "    plt.title(\"Kết quả nhận dạng với mô hình YOLO-World\")\n",
+                "    plt.show()\n",
+                "except Exception as e:\n",
+                "    print(f\"Vui lòng chuẩn bị một ảnh 'test_fruit.jpg' để kiểm thử.\")\n"
+            ]
+        }
+    ],
+    "metadata": {
+        "kernelspec": {
+            "display_name": "Python 3",
+            "language": "python",
+            "name": "python3"
+        },
+        "language_info": {
+            "name": "python",
+            "version": "3.11.0"
+        }
+    },
+    "nbformat": 4,
+    "nbformat_minor": 4
+}
+
+with open("D:\\.Study\\DETECT_VNESE_PROPS\\pipeline_nongsan.ipynb", "w", encoding="utf-8") as f:
+    json.dump(notebook, f, ensure_ascii=False, indent=4)

@@ -553,14 +553,21 @@ export class RealtimeDetectionClient {
     }, 200);
   }
 
-  sendFrame(frame: Blob) {
+  sendFrame(frame: Blob): boolean {
     if (USE_GCV) {
-      // Lưu frame mới nhất, timer sẽ lấy để xử lý
       this.lastBlob = frame;
-      return;
+      return true;
     }
     if (this.wsOrInterval instanceof WebSocket && this.wsOrInterval.readyState === WebSocket.OPEN) {
       this.wsOrInterval.send(frame);
+      return true;
+    }
+    return false;
+  }
+
+  sendConfig(config: { model: string; conf?: number }) {
+    if (this.wsOrInterval instanceof WebSocket && this.wsOrInterval.readyState === WebSocket.OPEN) {
+      this.wsOrInterval.send(JSON.stringify({ type: 'config', ...config }));
     }
   }
 

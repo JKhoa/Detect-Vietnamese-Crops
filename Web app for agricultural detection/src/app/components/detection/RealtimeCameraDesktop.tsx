@@ -23,13 +23,15 @@ export default function RealtimeCameraDesktop() {
   const [objects, setObjects] = useState<DetectedObject[]>([]);
   const [fps, setFps] = useState(0);
   const [latency, setLatency] = useState(0);
-  const [conf, setConf] = useState(0.5);
+  const [conf, setConf] = useState(0.3);
+  const [modelTarget, setModelTarget] = useState('ensemble');
   const [iou, setIou] = useState(0.45);
   const [connected, setConnected] = useState(false);
   const [selectedObj, setSelectedObj] = useState<DetectedObject | null>(null);
   const objectsRef = useRef<DetectedObject[]>([]);
   const videoSize = useRef({ w: 640, h: 480 });
   const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isProcessingRef = useRef(false);
 
   const drawDetections = useCallback(() => {
     const canvas = canvasRef.current;
@@ -92,6 +94,7 @@ export default function RealtimeCameraDesktop() {
   const handleStart = async () => {
     await startCamera(facingMode);
     const client = new RealtimeDetectionClient((data) => {
+      isProcessingRef.current = false;
       // Filter by conf threshold on the received detection
       const filtered = data.objects.filter(o => o.confidence >= conf);
       objectsRef.current = filtered;
@@ -107,10 +110,12 @@ export default function RealtimeCameraDesktop() {
 
       // Capture a frame from the video element every 100ms (10fps) and send to backend
       captureIntervalRef.current = setInterval(() => {
+        if (isProcessingRef.current) return;
         const video = videoRef.current;
         const currentClient = clientRef.current;
         if (!video || !currentClient || video.readyState < 2) return;
 
+        isProcessingRef.current = true;
         const w = video.videoWidth || videoSize.current.w;
         const h = video.videoHeight || videoSize.current.h;
 
@@ -118,11 +123,23 @@ export default function RealtimeCameraDesktop() {
         offscreen.width = w;
         offscreen.height = h;
         const ctx = offscreen.getContext('2d');
-        if (!ctx) return;
+        if (!ctx) {
+          isProcessingRef.current = false;
+          return;
+        }
         ctx.drawImage(video, 0, 0, w, h);
         offscreen.toBlob((blob) => {
-          if (blob) currentClient.sendFrame(blob);
-        }, 'image/jpeg', 0.75);
+          if (blob) {
+            const sent = currentClient.sendFrame(blob);
+            if (!sent) {
+              isProcessingRef.current = false;
+            } else {
+              setTimeout(() => { isProcessingRef.current = false; }, 2000);
+            }
+          } else {
+            isProcessingRef.current = false;
+          }
+        }, 'image/jpeg', 0.9);
       }, 100);
     }, 800);
   };
@@ -148,6 +165,12 @@ export default function RealtimeCameraDesktop() {
       setObjects(filtered);
     }
   }, [conf]);
+
+  useEffect(() => {
+    if (clientRef.current) {
+      clientRef.current.sendConfig({ model: modelTarget, conf });
+    }
+  }, [modelTarget, conf]);
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -182,6 +205,19 @@ export default function RealtimeCameraDesktop() {
             </>
           )}
           <div className="ml-auto flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <select
+                value={modelTarget}
+                onChange={e => setModelTarget(e.target.value)}
+                className="text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none focus:border-green-500"
+              >
+                <option value="ensemble">Kết hợp (Chuẩn)</option>
+                <option value="primary">Nhanh (Cơ bản)</option>
+                <option value="yolov8n">Nhanh (Nông sản)</option>
+                <option value="yolov8s">Vừa (Nông sản)</option>
+                <option value="yolov8x">Chính xác nhất</option>
+              </select>
+            </div>
             <div className="flex items-center gap-2">
               <Sliders size={14} className="text-gray-400" />
               <span style={{ fontSize: '0.75rem' }} className="text-gray-500">Conf</span>

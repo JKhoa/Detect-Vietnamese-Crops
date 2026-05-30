@@ -37,22 +37,8 @@ from PIL import Image
 # HuggingFace free Inference API
 # ──────────────────────────────────────────────────────────────────────────────
 
-_HF_MODEL   = "dima806/fruit_100_types_image_detection"   # local ViT, 100 lớp gồm sầu riêng
-_HF_API_URL = f"https://router.huggingface.co/hf-inference/models/{_HF_MODEL}"  # legacy, có thể 401
-
-# Pipeline classifier local (lazy-load lần đầu — ~330MB tải về cache HF)
-_HF_PIPELINE = None
-def _get_hf_pipeline():
-    global _HF_PIPELINE
-    if _HF_PIPELINE is None:
-        try:
-            from transformers import pipeline
-            _HF_PIPELINE = pipeline("image-classification", model=_HF_MODEL, top_k=5)
-            print(f"[HF] Loaded local classifier: {_HF_MODEL}")
-        except Exception as e:
-            print(f"[HF] Failed to load local pipeline: {e}")
-            _HF_PIPELINE = False
-    return _HF_PIPELINE if _HF_PIPELINE is not False else None
+_HF_MODEL   = "dima806/fruits_vegetable_image_detection"
+_HF_API_URL = f"https://api-inference.huggingface.co/models/{_HF_MODEL}"
 
 # Mapping HF label → Vietnamese class name.
 # Normalize key: lowercase + strip + no double-space. Matching also lowercase.
@@ -166,64 +152,6 @@ _HF_TO_CLASS_RAW: dict[str, str] = {
     "cassava":           "san",
     "lemongrass":        "sa",
     "chive":             "he",
-
-    # ── OIV7-specific (Open Images V7 secondary model) ────────────────────────
-    "common fig":        "sung",
-    "garden asparagus":  "mang_tay",
-    "asparagus":         "mang_tay",
-    "winter melon":      "bi_dao",
-    "squash plant":      "bi",
-    "zucchini":          "bi_ngoi",
-    "mushroom":          "nam",
-    "artichoke":         "atiso",
-
-    # ── 100-class HF model (dima806/fruit_100_types_image_detection) ──────────
-    "durian":            "sau_rieng",
-    "dragonfruit":       "thanh_long",
-    "passion_fruit":     "chanh_day",
-    "mandarine":         "quit",
-    "bitter_gourd":      "kho_qua",
-    "custard_apple":     "mang_cau",
-    "sugar_apple":       "mang_cau",
-    "black_berry":       "mam_xoi_den",
-    "black_mullberry":   "mam_xoi_den",
-    "horned_melon":      "horned_melon",
-    "horned melon":      "horned_melon",
-    "finger_lime":       "finger_lime",
-    "finger lime":       "finger_lime",
-    "betel_nut":         "betel_nut",
-    "betel nut":         "betel_nut",
-    "oil_palm":          "oil_palm",
-    "oil palm":          "oil_palm",
-    "indian_strawberry": "dau",
-    "indian strawberry": "dau",
-    "mock_strawberry":   "dau",
-    "mock strawberry":   "dau",
-    "strawberry_guava":  "oi",
-    "strawberry guava":  "oi",
-    "malay_apple":       "tao",
-    "malay apple":       "tao",
-    "mountain_soursop":  "mang_cau",
-    "mountain soursop":  "mang_cau",
-    "yali_pear":         "le",
-    "yali pear":         "le",
-    "yellow_plum":       "man",
-    "yellow plum":       "man",
-    "kaffir_lime":       "chanh",
-    "kaffir lime":       "chanh",
-    "hard_kiwi":         "kiwi",
-    "hard kiwi":         "kiwi",
-    "pawpaw":            "du_du",
-    "salak":             "salak",
-    "feijoa":            "feijoa",
-    "cempedak":          "cempedak",
-    "langsat":           "langsat",
-    "santol":            "santol",
-    "olive":             "olive",
-    "ackee":             "ackee",
-    "abiu":              "abiu",
-    "acerola":           "acerola",
-    "acai":              "acai",
 }
 
 # Case-insensitive accessor
@@ -320,25 +248,6 @@ _VN_DISPLAY: dict[str, str] = {
     "cu_cai_trang":   "Củ cải trắng",
     "dau_nanh":       "Đậu nành",
     "dau_ha_lan":     "Đậu Hà Lan",
-    "mang_tay":       "Măng tây",
-    "bi_dao":         "Bí đao",
-    "bi_ngoi":        "Bí ngòi",
-    "nam":            "Nấm",
-    "atiso":          "Atisô",
-    "salak":          "Salak",
-    "olive":          "Ô-liu",
-    "feijoa":         "Feijoa",
-    "cempedak":       "Cempedak",
-    "langsat":        "Bòn bon",
-    "santol":         "Sấu Thái",
-    "betel_nut":      "Cau",
-    "oil_palm":       "Cọ dầu",
-    "horned_melon":   "Dưa gai châu Phi",
-    "finger_lime":    "Chanh ngón tay",
-    "ackee":          "Ackee",
-    "abiu":           "Abiu",
-    "acerola":        "Acerola",
-    "acai":           "Açaí",
 }
 
 def _vn_display(slug: str) -> str:
@@ -354,7 +263,6 @@ _PER_CLASS_CONF: dict[str, float] = {
     "chuoi":     0.20,   # banana hay bị false-negative ở conf cao
     "dua":       0.40,   # coconut / pineapple dễ nhầm
     "mang_cau":  0.40,   # soursop
-    "bo":        0.20,   # avocado (OIV7 model có thể trả conf thấp)
 }
 _DEFAULT_CONF = 0.25
 
@@ -398,48 +306,14 @@ class YOLOHFDetector:
     Fallback: nếu HF không khả dụng (loading / network error) → dùng COCO mapping.
     """
 
-    def _map_yolo_name(self, raw_name: str) -> str:
-        r = raw_name.lower().strip()
-        if " - " in r: r = r.split(" - ")[-1].strip()
-        elif "-" in r and r.endswith("-"): r = r.split("-")[-2].strip()
-        r = r.replace("-", " ").strip()
-        
-        if r == "apple fruit": r = "apple"
-        if r == "pear fruit": r = "pear"
-        if r == "figs": r = "fig"
-        if r == "green gram": r = "mung bean"
-        if r == "groundnut": r = "peanut"
-        if r == "okra": r = "ladyfinger"
-        if r == "avacado": r = "avocado"
-        if r == "brocoli": r = "broccoli"
-        if r == "brinjal": r = "eggplant"
-        
-        if r in _HF_TO_CLASS:
-            return _HF_TO_CLASS[r]
-        if raw_name in _COCO_AGRI_WHITELIST:
-            return _COCO_TO_CLASS[raw_name]
-        if len(self.model.names) != 80:
-            return r.replace(" ", "_")
-        return ""
-
     def __init__(self, model_path: str, hf_token: str = ""):
         from ultralytics import YOLO
         self.model     = YOLO(model_path)
         self.hf_token  = hf_token
         self.model_path = model_path
 
-        if "world" in model_path.lower():
-            target_classes = list(set(_HF_TO_CLASS.keys()) | set(_COCO_TO_CLASS.keys()))
-            target_classes = sorted([c for c in target_classes if isinstance(c, str) and c.strip()])
-            self.model.set_classes(target_classes)
-
         # CHỈ giữ class nông sản (Vietnamese slug). Không trộn COCO names vào.
         all_vn = set(_HF_TO_CLASS.values()) | set(_COCO_TO_CLASS.values())
-        if len(self.model.names) != 80:
-            for v in self.model.names.values():
-                mapped = self._map_yolo_name(v)
-                if mapped: all_vn.add(mapped)
-
         self.classes: list[str] = sorted(all_vn)
 
         print(f"[YOLOHFDetector] Model: {model_path}")
@@ -459,39 +333,15 @@ class YOLOHFDetector:
 
     # ── Internal: HF classify crop ────────────────────────────────────────────
 
-    def _classify_crop(self, crop_bytes: bytes, top_k: int = 1) -> list[tuple[str, float]]:
+    def _classify_crop(self, crop_bytes: bytes) -> tuple[str, float]:
         """
-        Phân loại ảnh crop bằng HF classifier.
-        - Ưu tiên LOCAL transformers pipeline (offline, không cần token).
-        - Fallback API nếu local không load được.
-        Trả về list [(vietnamese_slug, confidence), ...] đã map qua _HF_TO_CLASS,
-        sắp giảm dần theo confidence, độ dài tối đa top_k.
+        Gửi crop lên HF free API.
+        Trả về (vietnamese_class_name, confidence) hoặc ("", 0.0) nếu lỗi.
+        Tự retry 1 lần khi model đang loading (cold start ~20s).
         """
         if not crop_bytes:
-            return []
+            return "", 0.0
 
-        # ── 1. Local pipeline (preferred) ────────────────────────────────────
-        pipe = _get_hf_pipeline()
-        if pipe is not None:
-            try:
-                img = Image.open(io.BytesIO(crop_bytes)).convert("RGB")
-                preds = pipe(img)  # list[{label, score}], top_k=5 mặc định
-                out: list[tuple[str, float]] = []
-                seen: set[str] = set()
-                for p in preds:
-                    label = str(p.get("label", "")).lower().strip().replace("_", " ")
-                    score = float(p.get("score", 0.0))
-                    vn = _HF_TO_CLASS.get(label)
-                    if vn and vn not in seen:
-                        out.append((vn, score))
-                        seen.add(vn)
-                        if len(out) >= top_k: break
-                return out
-            except Exception as e:
-                print(f"[HF-local] inference error: {e}")
-                # Rơi xuống API fallback bên dưới
-
-        # ── 2. API fallback (cũ, có thể 401) ──────────────────────────────────
         headers: dict[str, str] = {"Content-Type": "image/jpeg"}
         if self.hf_token:
             headers["Authorization"] = f"Bearer {self.hf_token}"
@@ -504,20 +354,7 @@ class YOLOHFDetector:
                     data=crop_bytes,
                     timeout=30,
                 )
-                if not resp.ok:
-                    print(f"[YOLOHFDetector] HF HTTP {resp.status_code}: {resp.text[:160]}")
-                    break
-
-                text = (resp.text or "").strip()
-                if not text:
-                    print("[YOLOHFDetector] HF returned empty body")
-                    break
-
-                try:
-                    data = resp.json()
-                except Exception:
-                    print(f"[YOLOHFDetector] HF non-JSON response: {text[:160]}")
-                    break
+                data = resp.json()
 
                 # HF cold start: {"error": "Model ... is currently loading"}
                 if (isinstance(data, dict)
@@ -527,29 +364,28 @@ class YOLOHFDetector:
                         print("[YOLOHFDetector] HF model loading, waiting 8s...")
                         time.sleep(8)
                         continue
-                    break
+                    break  # vẫn loading sau retry → fallback
 
-                # Kết quả: [{label: "Banana", score: 0.98}, ...]
+                # Kết quả thành công: [{label: "Banana", score: 0.98}, ...]
                 if isinstance(data, list) and data:
-                    out: list[tuple[str, float]] = []
-                    seen: set[str] = set()
-                    for cand in data[:10]:
+                    # Duyệt top-5, chọn kết quả đầu tiên map được sang VN slug
+                    for cand in data[:5]:
                         label = cand.get("label", "")
                         score = float(cand.get("score", 0.0))
                         key   = label.lower().strip()
-                        vn    = _HF_TO_CLASS.get(key)
-                        if vn and vn not in seen:
-                            out.append((vn, score))
-                            seen.add(vn)
-                            if len(out) >= top_k:
-                                break
-                    return out
+                        if key in _HF_TO_CLASS:
+                            return _HF_TO_CLASS[key], score
+                    # Không cái nào map được — trả top-1 raw để caller quyết định
+                    top   = data[0]
+                    label = top.get("label", "")
+                    score = float(top.get("score", 0.0))
+                    return "", 0.0  # DROP - không phải nông sản
 
             except Exception as e:
                 print(f"[YOLOHFDetector] HF error (attempt {attempt}): {e}")
                 break
 
-        return []
+        return "", 0.0
 
     # ── Public: detect image ──────────────────────────────────────────────────
 
@@ -573,35 +409,16 @@ class YOLOHFDetector:
             frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
         # 2. YOLO detection
-        is_broad_model = len(self.model.names) > 200
         t0      = time.perf_counter()
         results = self.model(
             frame,
             conf=conf,
             iou=iou,
             max_det=max_det,
-            agnostic_nms=False,   # NMS theo class — 2 class khác nhau không suppress nhau
             verbose=False,
-            augment=augment,      # TTA: tăng recall cho ảnh đa object
+            augment=augment,
         )
         boxes = results[0].boxes
-
-        # Auto-retry: nếu không có bbox nào ở conf gốc, hạ xuống 0.05 để vét cạn.
-        # Áp dụng cho MỌI model (trước đây chỉ broad) — single-mode user cần thấy kết quả
-        # ngay cả khi mẫu ảnh khó.
-        if len(boxes) == 0 and conf > 0.05:
-            retry_conf = 0.05
-            print(f"[detect_image] Retry with lower conf={retry_conf} (original={conf})")
-            results = self.model(
-                frame,
-                conf=retry_conf,
-                iou=iou,
-                max_det=max_det,
-                agnostic_nms=False,
-                verbose=False,
-                augment=augment,
-            )
-            boxes = results[0].boxes
 
         objects: list[dict] = []
         for i, box in enumerate(boxes):
@@ -610,14 +427,8 @@ class YOLOHFDetector:
             coco_name  = results[0].names[int(box.cls[0])]
 
             # 3. Crop → HF classify. HF là authoritative — quyết định CÓ phải nông sản không.
-            hf_name = ""
-            hf_conf = 0.0
-            # Dùng HF để refine nhãn cho model COCO và các model lớn kiểu OIV.
-            if len(self.model.names) == 80 or len(self.model.names) > 200:
-                crop_b  = self._crop_bytes(frame, x1, y1, x2, y2)
-                hf_list = self._classify_crop(crop_b, top_k=1)
-                if hf_list:
-                    hf_name, hf_conf = hf_list[0]
+            crop_b           = self._crop_bytes(frame, x1, y1, x2, y2)
+            hf_name, hf_conf = self._classify_crop(crop_b)
 
             # 4. Chọn class name:
             #    (a) HF trả về nông sản hợp lệ (ưu tiên cao nhất - phủ 70+ loại)
@@ -625,25 +436,21 @@ class YOLOHFDetector:
             #    (c) Ngược lại DROP (vase, bottle, person, car…)
             class_name = ""
             confidence = yolo_conf
-            mapped = self._map_yolo_name(coco_name)
 
             if hf_name and hf_conf >= 0.20:
                 # HF nhận diện rõ ràng là nông sản → dùng HF
                 class_name = hf_name
                 confidence = max(yolo_conf, hf_conf)
-            elif mapped:
-                class_name = mapped
+            elif coco_name in _COCO_AGRI_WHITELIST:
+                # HF không chắc nhưng COCO là nông sản quen thuộc
+                class_name = _COCO_TO_CLASS[coco_name]
             else:
                 # Không phải nông sản — DROP
                 print(f"[detect_image] DROP non-agri: coco={coco_name}, hf_name={hf_name}, hf_conf={hf_conf:.2f}")
                 continue
 
-            # 5. Per-class confidence filter.
-            # Floor = user's requested conf (tôn trọng slider UI). Chỉ per-class whitelist
-            # mới có ngưỡng cao hơn (chuoi/dua/mang_cau dễ nhầm lẫn).
-            user_floor = max(0.05, float(conf))
-            per_class  = _PER_CLASS_CONF.get(class_name)
-            min_conf   = max(user_floor, per_class) if per_class else user_floor
+            # 5. Per-class confidence filter
+            min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
             if confidence < min_conf:
                 continue
 
@@ -670,42 +477,34 @@ class YOLOHFDetector:
             })
 
         # ── Fallback: nếu YOLO không detect được nông sản nào (sầu riêng, thanh long…
-        #    không có trong COCO), classify TOÀN BỘ ảnh bằng HF.
-        #    Multi-mode: lấy top-3 candidates để user thấy đa dạng.
-        #    Single-mode (max_det==1): chỉ lấy top-1.
+        #    những loại không có trong COCO), classify TOÀN BỘ ảnh bằng HF.
         if not objects:
             print("[detect_image] No YOLO detections — classifying full image with HF")
+            full_img_bytes = image_bytes
+            # Re-encode để đảm bảo JPEG
             _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             full_img_bytes = buf.tobytes()
 
-            want_k   = 1 if max_det == 1 else 3
-            hf_cands = self._classify_crop(full_img_bytes, top_k=want_k)
-
-            # Ngưỡng chấp nhận: single-mode rất thấp (0.05) để vét cạn;
-            # multi-mode vẫn cần độ tin cậy tối thiểu (0.15).
-            accept_thr = 0.05 if max_det == 1 else 0.15
-
-            for hf_name, hf_conf in hf_cands:
-                if not hf_name or hf_conf < accept_thr:
-                    continue
+            hf_name, hf_conf = self._classify_crop(full_img_bytes)
+            if hf_name and hf_conf >= 0.20:
                 class_id = (
                     self.classes.index(hf_name)
                     if hf_name in self.classes else 0
                 )
-                top_k_list = [{
-                    "class_name":   n,
-                    "display_name": _vn_display(n),
-                    "class_id":     self.classes.index(n) if n in self.classes else 0,
-                    "confidence":   round(c, 4),
-                } for n, c in hf_cands[:3]]
                 objects.append({
                     "id":           _make_id("obj"),
                     "class_id":     class_id,
                     "class_name":   hf_name,
                     "display_name": _vn_display(hf_name),
                     "confidence":   round(hf_conf, 4),
+                    # Bbox = toàn bộ ảnh (whole-image classification)
                     "bbox":         _bbox_dict(0, 0, img_w, img_h, img_w, img_h),
-                    "top_k":        top_k_list,
+                    "top_k": [{
+                        "class_name":   hf_name,
+                        "display_name": _vn_display(hf_name),
+                        "class_id":     class_id,
+                        "confidence":   round(hf_conf, 4),
+                    }],
                 })
 
         inference_ms = (time.perf_counter() - t0) * 1000
@@ -726,51 +525,41 @@ class YOLOHFDetector:
         conf: float   = 0.25,
         iou: float    = 0.50,
         frame_id: int = 0,
-        model_target: str = "ensemble"
     ) -> dict:
         nparr = np.frombuffer(frame_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is None:
-            print(f"[detect_frame] ERROR: cv2.imdecode returned None for {len(frame_bytes)} bytes!")
             return {"frame_id": frame_id, "objects": [],
                     "inference_time_ms": 0.0, "fps": 0.0}
 
         img_h, img_w = frame.shape[:2]
 
-        objects, inference_ms = self._detect_frame_array(frame, conf, iou, max_det=300, model_target=model_target)
-        fps = round(1000.0 / inference_ms, 1) if inference_ms > 0 else 0.0
+        t0      = time.perf_counter()
+        results = self.model(frame, conf=conf, iou=iou, verbose=False)
+        boxes   = results[0].boxes
 
-        return {
-            "frame_id":          frame_id,
-            "objects":           objects,
-            "inference_time_ms": round(inference_ms, 2),
-            "fps":               fps,
-        }
-
-    def _detect_frame_array(self, frame: np.ndarray, conf: float, iou: float, max_det: int = 300, model_target: str = "ensemble") -> tuple[list[dict], float]:
-        t0 = time.perf_counter()
-        results = self.model(frame, conf=conf, iou=iou, max_det=max_det, agnostic_nms=False, verbose=False)
-        inf_ms = (time.perf_counter() - t0) * 1000
-        
-        boxes = results[0].boxes
         objects: list[dict] = []
-        img_h, img_w = frame.shape[:2]
-
         for i, box in enumerate(boxes):
             x1, y1, x2, y2 = box.xyxy[0].tolist()
             yolo_conf = float(box.conf[0])
             coco_name = results[0].names[int(box.cls[0])]
-            mapped = self._map_yolo_name(coco_name)
 
-            if not mapped:
+            # Whitelist: chỉ chấp nhận COCO class nằm trong danh sách nông sản
+            if coco_name not in _COCO_AGRI_WHITELIST:
                 continue
 
-            class_name = mapped
+            class_name = _COCO_TO_CLASS[coco_name]
+
+            # Per-class conf filter
             min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
             if yolo_conf < min_conf:
                 continue
 
-            class_id = self.classes.index(class_name) if class_name in self.classes else i
+            class_id = (
+                self.classes.index(class_name)
+                if class_name in self.classes else i
+            )
+
             objects.append({
                 "id":           _make_id("obj"),
                 "class_id":     class_id,
@@ -785,7 +574,16 @@ class YOLOHFDetector:
                     "confidence":   round(yolo_conf, 4),
                 }],
             })
-        return objects, inf_ms
+
+        inference_ms = (time.perf_counter() - t0) * 1000
+        fps = round(1000.0 / inference_ms, 1) if inference_ms > 0 else 0.0
+
+        return {
+            "frame_id":          frame_id,
+            "objects":           objects,
+            "inference_time_ms": round(inference_ms, 2),
+            "fps":               fps,
+        }
 
     # ── Public: detect video (YOLO only per frame) ────────────────────────────
 
@@ -814,38 +612,71 @@ class YOLOHFDetector:
                 return self._empty_video_result(session_id)
 
             step           = max(1, total_frames // MAX_FRAMES)
+            sample_indices = list(range(0, total_frames, step))[:MAX_FRAMES]
             frames_result: list[dict] = []
             total_inf_ms  = 0.0
 
-            current_frame = 0
-            prog_i = 0
-            while current_frame < total_frames and prog_i < MAX_FRAMES:
+            for prog_i, frame_idx in enumerate(sample_indices):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
                 ret, frame = cap.read()
                 if not ret:
-                    break
+                    continue
 
-                if current_frame % step == 0:
-                    frame_idx = current_frame
-                    img_h, img_w = frame.shape[:2]
-                    timestamp    = frame_idx / fps_source
+                img_h, img_w = frame.shape[:2]
+                timestamp    = frame_idx / fps_source
 
-                    objects, inf_ms = self._detect_frame_array(frame, conf, iou, max_det=300)
-                    total_inf_ms += inf_ms
+                t0      = time.perf_counter()
+                results = self.model(frame, conf=conf, iou=iou, verbose=False)
+                inf_ms  = (time.perf_counter() - t0) * 1000
+                total_inf_ms += inf_ms
 
-                    frames_result.append({
-                        "frame_index":       frame_idx,
-                        "timestamp":         round(timestamp, 3),
-                        "objects":           objects,
-                        "inference_time_ms": round(inf_ms, 2),
+                boxes   = results[0].boxes
+                objects: list[dict] = []
+
+                for i, box in enumerate(boxes):
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    yolo_conf = float(box.conf[0])
+                    coco_name = results[0].names[int(box.cls[0])]
+
+                    # Whitelist: chỉ nông sản
+                    if coco_name not in _COCO_AGRI_WHITELIST:
+                        continue
+
+                    class_name = _COCO_TO_CLASS[coco_name]
+
+                    min_conf = _PER_CLASS_CONF.get(class_name, _DEFAULT_CONF)
+                    if yolo_conf < min_conf:
+                        continue
+
+                    class_id = (
+                        self.classes.index(class_name)
+                        if class_name in self.classes else i
+                    )
+                    objects.append({
+                        "id":           _make_id("obj"),
+                        "class_id":     class_id,
+                        "class_name":   class_name,
+                        "display_name": _vn_display(class_name),
+                        "confidence":   round(yolo_conf, 4),
+                        "bbox":         _bbox_dict(x1, y1, x2, y2, img_w, img_h),
+                        "top_k": [{
+                            "class_name":   class_name,
+                            "display_name": _vn_display(class_name),
+                            "class_id":     class_id,
+                            "confidence":   round(yolo_conf, 4),
+                        }],
                     })
 
-                    if progress_cb:
-                        pct = int((prog_i + 1) / MAX_FRAMES * 100)
-                        progress_cb(pct)
-                    
-                    prog_i += 1
+                frames_result.append({
+                    "frame_index":       frame_idx,
+                    "timestamp":         round(timestamp, 3),
+                    "objects":           objects,
+                    "inference_time_ms": round(inf_ms, 2),
+                })
 
-                current_frame += 1
+                if progress_cb and len(sample_indices) > 0:
+                    pct = int((prog_i + 1) / len(sample_indices) * 100)
+                    progress_cb(pct)
 
             cap.release()
 
@@ -897,7 +728,6 @@ def resolve_detector() -> "YOLOHFDetector":
         candidates = [
             # Custom trained 74-class model
             str(base.parent.parent.parent / "ultralytics" / "runs" / "detect" / "train" / "weights" / "best.pt"),
-            str(base.parent.parent / "runs" / "detect" / "crowded_cpu_fix2" / "weights" / "best.pt"),
             r"c:\Users\Admin\Downloads\Study\Study\Detect_VNese_Props\ultralytics\runs\detect\train\weights\best.pt",
             r"d:\Study\Detect_VNese_Props\ultralytics\runs\detect\train\weights\best.pt",
             # COCO pretrained fallback

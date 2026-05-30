@@ -9,7 +9,6 @@ interface BottomNavItem {
 
 const bottomNavItems: BottomNavItem[] = [
   { path: '/', label: 'Trang chủ', icon: <Home size={22} /> },
-  { path: '/detect/camera', label: 'Camera', icon: <Camera size={22} /> },
   { path: '/detect/image', label: 'Ảnh', icon: <ImageIcon size={22} /> },
   { path: '/detect/video', label: 'Video', icon: <Video size={22} /> },
   { path: '/history', label: 'Lịch sử', icon: <History size={22} /> },

@@ -10,16 +10,6 @@ export default function HomePage() {
 
   const features = [
     {
-      icon: <Camera size={isDesktop ? 28 : 24} />,
-      title: 'Realtime Camera',
-      desc: 'Nhận diện nông sản trực tiếp qua camera theo thời gian thực với WebSocket streaming',
-      color: 'text-green-600',
-      bg: 'bg-green-100',
-      path: '/detect/camera',
-      badge: 'LIVE',
-      badgeColor: 'bg-red-500',
-    },
-    {
       icon: <ImageIcon size={isDesktop ? 28 : 24} />,
       title: 'Upload Ảnh',
       desc: 'Tải lên ảnh JPG/PNG để phân tích chi tiết với thông tin metadata nông sản đầy đủ',
@@ -83,20 +73,20 @@ export default function HomePage() {
 
                 <div className="flex gap-3">
                   <button
-                    onClick={() => navigate('/detect/camera')}
+                    onClick={() => navigate('/detect/image')}
                     className="flex items-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl transition-colors shadow-sm"
                     style={{ fontWeight: 600 }}
                   >
-                    <Camera size={18} />
-                    Thử ngay với Camera
+                    <ImageIcon size={18} />
+                    Thử ngay với Ảnh
                   </button>
                   <button
-                    onClick={() => navigate('/detect/image')}
+                    onClick={() => navigate('/detect/video')}
                     className="flex items-center gap-2 px-6 py-3 bg-white border border-green-200 hover:bg-green-50 text-green-700 rounded-xl transition-colors"
                     style={{ fontWeight: 500 }}
                   >
-                    <ImageIcon size={18} />
-                    Upload ảnh
+                    <Video size={18} />
+                    Upload Video
                   </button>
                 </div>
               </div>
@@ -124,7 +114,7 @@ export default function HomePage() {
           </div>
 
           {/* Feature Cards */}
-          <div className="grid grid-cols-3 gap-5 mb-8">
+          <div className="grid grid-cols-2 gap-5 mb-8">
             {features.map((f) => (
               <button
                 key={f.path}
@@ -157,7 +147,6 @@ export default function HomePage() {
               </div>
               <ul className="space-y-2.5">
                 {[
-                  '✅ Nhận diện realtime qua WebSocket',
                   '✅ Upload ảnh với bounding box + metadata',
                   '✅ Xử lý video theo lô frame',
                   '✅ Metadata 20+ loại nông sản Việt Nam',
@@ -240,11 +229,11 @@ export default function HomePage() {
             Hỗ trợ camera, ảnh và video.
           </p>
           <button
-            onClick={() => navigate('/detect/camera')}
+            onClick={() => navigate('/detect/image')}
             className="w-full flex items-center justify-center gap-2 py-3 bg-green-600 text-white rounded-xl"
             style={{ fontWeight: 600 }}
           >
-            <Camera size={18} />
+            <ImageIcon size={18} />
             Bắt đầu nhận diện
           </button>
         </div>

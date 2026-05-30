@@ -8,6 +8,8 @@ import { detectImage } from '../../services/mockApi';
 import BoundingBoxCanvas from './BoundingBoxCanvas';
 import ProductMetadataCard from '../product/ProductMetadataCard';
 
+type DetectMode = 'multi' | 'single';
+
 export default function ImageUploadDesktop() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -15,8 +17,7 @@ export default function ImageUploadDesktop() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [conf, setConf] = useState(0.5);
-  const [iou, setIou] = useState(0.45);
+  const [mode, setMode] = useState<DetectMode>('multi');
   const [selectedObj, setSelectedObj] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,7 +50,10 @@ export default function ImageUploadDesktop() {
     setLoading(true);
     setError(null);
     try {
-      const res = await detectImage(file, conf, iou);
+      const conf = mode === 'single' ? 0.10 : 0.20;
+      const iou = 0.45;
+      const maxDet = mode === 'single' ? 1 : 100;
+      const res = await detectImage(file, conf, iou, maxDet);
       setResult(res);
       setSelectedObj(0);
     } catch (err) {
@@ -90,29 +94,25 @@ export default function ImageUploadDesktop() {
               Tham số inference
             </span>
           </div>
-          <div className="flex items-center gap-3">
-            <label style={{ fontSize: '0.75rem' }} className="text-gray-500">Conf</label>
-            <input
-              type="range" min={0.1} max={0.95} step={0.05}
-              value={conf}
-              onChange={e => setConf(+e.target.value)}
-              className="w-24 accent-green-500"
-            />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }} className="text-green-700 w-8">
-              {conf.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <label style={{ fontSize: '0.75rem' }} className="text-gray-500">IoU</label>
-            <input
-              type="range" min={0.1} max={0.9} step={0.05}
-              value={iou}
-              onChange={e => setIou(+e.target.value)}
-              className="w-24 accent-green-500"
-            />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }} className="text-green-700 w-8">
-              {iou.toFixed(2)}
-            </span>
+          <div className="flex items-center gap-5">
+            <label className="flex items-center gap-2 text-gray-700" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={mode === 'multi'}
+                onChange={() => setMode('multi')}
+                className="accent-green-600"
+              />
+              Nhận diện nhiều trái cây
+            </label>
+            <label className="flex items-center gap-2 text-gray-700" style={{ fontSize: '0.8rem', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={mode === 'single'}
+                onChange={() => setMode('single')}
+                className="accent-green-600"
+              />
+              Nhận diện 1 trái cây
+            </label>
           </div>
           {result && (
             <div className="ml-auto flex items-center gap-4">
@@ -283,7 +283,7 @@ export default function ImageUploadDesktop() {
                     }`}
                     style={{ fontSize: '0.75rem', fontWeight: 500 }}
                   >
-                    #{i + 1} {obj.class_name}
+                    #{i + 1} {obj.display_name || obj.class_name}
                   </button>
                 ))}
               </div>

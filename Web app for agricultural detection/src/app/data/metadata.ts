@@ -1,4 +1,4 @@
-import type { ProductMetadata } from '../types';
+﻿import type { ProductMetadata } from '../types';
 
 export const PRODUCT_METADATA: Record<string, ProductMetadata> = {
   xoai: {
@@ -383,13 +383,150 @@ export const PRODUCT_METADATA: Record<string, ProductMetadata> = {
     color_tag: '#fbbf24',
     emoji: '🍈',
   },
+  tao: {
+    class_name: 'tao',
+    class_id: 100,
+    name_vi: 'Táo',
+    name_en: 'Apple',
+    group: 'Trái cây ôn đới',
+    varieties: ['Táo đỏ', 'Táo Fuji', 'Táo xanh', 'Táo Gala'],
+    characteristics: ['Quả tròn', 'Vỏ trơn bóng, đỏ hoặc xanh', 'Thịt giòn, xốp', 'Vị ngọt hoặc chua nhẹ'],
+    season: 'Quanh năm (chủ yếu nhập khẩu)',
+    growing_regions: ['Nhập khẩu từ Mỹ, New Zealand, Trung Quốc'],
+    nutrition: ['Vitamin C', 'Chất xơ (Pectin)', 'Kali', 'Vitamin K', 'Chống oxy hóa'],
+    storage: 'Bảo quản trong tủ lạnh (0 - 4°C) có thể giữ được vài tuần.',
+    usage_suggestions: ['Ăn tươi', 'Làm salad', 'Nước ép', 'Làm bánh táo', 'Mứt táo'],
+    ripeness_indicators: ['Vỏ căng bóng', 'Ấn vào thấy cứng, không bị mềm', 'Có mùi thơm nhẹ'],
+    color_tag: '#ef4444',
+    emoji: '🍎',
+  },
+  ca_rot: {
+    class_name: 'ca_rot',
+    class_id: 101,
+    name_vi: 'Cà rốt',
+    name_en: 'Carrot',
+    group: 'Rau củ ăn rễ',
+    varieties: ['Cà rốt cam', 'Cà rốt Đà Lạt', 'Cà rốt tím', 'Baby carrot'],
+    characteristics: ['Củ thuôn dài', 'Màu cam đặc trưng', 'Kết cấu giòn', 'Có vị hơi ngọt, nhiều nước'],
+    season: 'Quanh năm, đặc biệt ngon vào mùa đông xuân',
+    growing_regions: ['Thái Bình', 'Hải Dương', 'Hưng Yên', 'Đà Lạt (Lâm Đồng)'],
+    nutrition: ['Vitamin A (Beta-Carotene)', 'Vitamin K', 'Kali', 'Chất xơ', 'Chất chống oxy hóa'],
+    storage: 'Bọc trong giấy báo hoặc túi nilon, để ngăn mát tủ lạnh (lên đến 2-3 tuần).',
+    usage_suggestions: ['Ăn sống', 'Nước ép', 'Làm gỏi/salad', 'Ninh xương, hầm', 'Trang trí món ăn'],
+    ripeness_indicators: ['Củ cứng chắc', 'Màu cam tươi', 'Cuống tươi xanh (nếu còn)'],
+    color_tag: '#f97316',
+    emoji: '🥕',
+  },
+  nho: {
+    class_name: 'nho',
+    class_id: 102,
+    name_vi: 'Nho',
+    name_en: 'Grape',
+    group: 'Trái cây quả mọng nhỏ',
+    varieties: ['Nho xanh', 'Nho đỏ', 'Nho đen', 'Nho móng tay', 'Nho Ninh Thuận'],
+    characteristics: ['Quả mọng nhỏ', 'Mọc thành chùm', 'Thịt quả mềm, nhiều nước', 'Vỏ mỏng, dễ ăn'],
+    season: 'Tháng 8 - 12 (Ninh Thuận)',
+    growing_regions: ['Ninh Thuận', 'Bình Thuận', 'Nhập khẩu từ Úc, Mỹ'],
+    nutrition: ['Resveratrol', 'Vitamin C', 'Kali', 'Vitamin K', 'Đường tự nhiên'],
+    storage: 'Để trong hộp kín hoặc túi đục lỗ, bảo quản ngăn mát tủ lạnh (1-2 tuần). Chỉ rửa ngay trước khi ăn.',
+    usage_suggestions: ['Ăn tươi', 'Ép nước', 'Làm mứt', 'Lên men thành rượu', 'Sấy khô thành nho khô'],
+    ripeness_indicators: ['Cuống xanh, chắc', 'Quả căng mọng không bị nhăn', 'Lớp phấn trắng mỏng ngoài vỏ'],
+    color_tag: '#a855f7',
+    emoji: '🍇',
+  },
 };
 
 export const CLASS_NAMES = Object.keys(PRODUCT_METADATA);
 
+const MODEL_CLASS_ALIAS: Record<string, string> = {
+  apple: 'tao',
+  apple_fruit: 'tao',
+  banana: 'chuoi',
+  orange: 'cam',
+  dragon_fruit: 'thanh_long',
+  grapes: 'nho',
+  mango: 'xoai',
+  guava: 'oi',
+  lychee: 'vai',
+  lemon: 'chanh',
+  papaya: 'du_du',
+  peach: 'dao',
+  pear_fruit: 'le',
+  pineapple: 'dua_gai',
+  pomegranate: 'luu',
+  pomelo: 'buoi',
+  soursop: 'mang_cau',
+  starfruit: 'khe',
+  starfruit_carambola: 'khe',
+  strawberry: 'dau',
+  sugar_apple: 'mang_cau',
+  watermelon: 'dua_hau',
+  avacado: 'bo',
+  muskmelon: 'dua_luoi',
+  coconut: 'dua',
+  bitter_gourd: 'kho_qua',
+  brinjal: 'ca_tim',
+  brocoli: 'bong_cai_xanh',
+  chilli_pepper: 'ot',
+  bell_pepper_capsicum: 'ot_chuong',
+  maize: 'ngo',
+  cucumber: 'dua_chuot',
+  potato: 'khoai_tay',
+  garlic: 'toi',
+  onion: 'hanh',
+  carrot: 'ca_rot',
+  cabbage: 'bap_cai',
+  cauliflower: 'bong_cai_trang',
+  beetroot: 'cu_den',
+  radish: 'cu_cai',
+  spinach: 'rau_chan_vit',
+  soybean: 'dau_nanh',
+  pea: 'dau_ha_lan',
+  sweet_potato: 'khoai_lang',
+};
+
+const toTitle = (value: string) =>
+  value
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (s) => s.toUpperCase());
+
+const buildAutoMetadata = (normalized: string): ProductMetadata => {
+  const pretty = toTitle(normalized);
+  return {
+    class_name: normalized,
+    class_id: -1,
+    name_vi: pretty,
+    name_en: pretty,
+    group: 'Nông sản (model đã nhận diện)',
+    varieties: ['Đang cập nhật'],
+    characteristics: ['Được nhận diện từ mô hình nông sản đã huấn luyện.'],
+    season: 'Đang cập nhật',
+    growing_regions: ['Đang cập nhật'],
+    nutrition: ['Đang cập nhật'],
+    storage: 'Đang cập nhật',
+    usage_suggestions: ['Đang cập nhật'],
+    ripeness_indicators: ['Đang cập nhật'],
+    color_tag: '#16a34a',
+    emoji: '🌿',
+  };
+};
+
 export const getMetadata = (className: string): ProductMetadata | null => {
-  const normalized = className.toLowerCase().replace(/ /g, '_').replace(/-/g, '_');
-  return PRODUCT_METADATA[normalized] || null;
+  const normalized = className
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  if (PRODUCT_METADATA[normalized]) return PRODUCT_METADATA[normalized];
+
+  const alias = MODEL_CLASS_ALIAS[normalized];
+  if (alias && PRODUCT_METADATA[alias]) return PRODUCT_METADATA[alias];
+
+  return buildAutoMetadata(normalized);
 };
 
 export const getAllClasses = (): ProductMetadata[] => {
@@ -404,3 +541,6 @@ export const getClassesByGroup = (): Record<string, ProductMetadata[]> => {
   });
   return groups;
 };
+
+
+

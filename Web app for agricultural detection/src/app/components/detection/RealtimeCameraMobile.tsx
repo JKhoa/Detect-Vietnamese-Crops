@@ -20,9 +20,12 @@ export default function RealtimeCameraMobile() {
   const [objects, setObjects] = useState<DetectedObject[]>([]);
   const [fps, setFps] = useState(0);
   const [latency, setLatency] = useState(0);
-  const [conf, setConf] = useState(0.5);
+  const [conf, setConf] = useState(0.3);
+  const [modelTarget, setModelTarget] = useState('ensemble');
   const [showSettings, setShowSettings] = useState(false);
   const [showResults, setShowResults] = useState(true);
+  const isProcessingRef = useRef(false);
+  const captureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const drawDetections = useCallback(() => {
     const canvas = canvasRef.current;
@@ -76,6 +79,7 @@ export default function RealtimeCameraMobile() {
   const handleStart = async () => {
     await startCamera('environment');
     const client = new RealtimeDetectionClient((data) => {
+      isProcessingRef.current = false;
       const filtered = data.objects.filter(o => o.confidence >= conf);
       objectsRef.current = filtered;
       setObjects([...filtered]);
@@ -83,16 +87,55 @@ export default function RealtimeCameraMobile() {
       setLatency(data.inference_time_ms);
     });
     clientRef.current = client;
-    setTimeout(() => client.connect(640, 480), 800);
+    setTimeout(() => {
+      client.connect(640, 480);
+      captureIntervalRef.current = setInterval(() => {
+        if (isProcessingRef.current) return;
+        const video = videoRef.current;
+        if (!video || video.readyState < 2) return;
+        isProcessingRef.current = true;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          isProcessingRef.current = false;
+          return;
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+          if (blob && clientRef.current) {
+            const sent = clientRef.current.sendFrame(blob);
+            if (!sent) {
+              isProcessingRef.current = false;
+            } else {
+              setTimeout(() => { isProcessingRef.current = false; }, 2000);
+            }
+          } else {
+            isProcessingRef.current = false;
+          }
+        }, 'image/jpeg', 0.9);
+      }, 100);
+    }, 800);
   };
 
   const handleStop = () => {
+    if (captureIntervalRef.current) {
+      clearInterval(captureIntervalRef.current);
+      captureIntervalRef.current = null;
+    }
     clientRef.current?.disconnect();
     clientRef.current = null;
     stopCamera();
     setObjects([]);
     objectsRef.current = [];
   };
+
+  useEffect(() => {
+    if (clientRef.current) {
+      clientRef.current.sendConfig({ model: modelTarget, conf });
+    }
+  }, [modelTarget, conf]);
 
   return (
     <div className="flex flex-col h-full">
@@ -111,15 +154,31 @@ export default function RealtimeCameraMobile() {
           {showSettings ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
         </button>
         {showSettings && (
-          <div className="px-4 pb-3 flex items-center gap-3">
-            <label style={{ fontSize: '0.75rem' }} className="text-gray-500">Confidence</label>
+          <div className="px-4 pb-3 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <label style={{ fontSize: '0.75rem' }} className="text-gray-500">Mô hình</label>
+              <select
+                value={modelTarget}
+                onChange={e => setModelTarget(e.target.value)}
+                className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1 outline-none"
+              >
+                <option value="ensemble">Kết hợp (Chuẩn)</option>
+                <option value="primary">Nhanh (Cơ bản)</option>
+                <option value="yolov8n">Nhanh (Nông sản)</option>
+                <option value="yolov8s">Vừa (Nông sản)</option>
+                <option value="yolov8x">Chính xác nhất</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-3">
+              <label style={{ fontSize: '0.75rem' }} className="text-gray-500">Độ nhạy</label>
             <input
               type="range" min={0.1} max={0.95} step={0.05}
               value={conf}
               onChange={e => setConf(+e.target.value)}
               className="flex-1 accent-green-500"
             />
-            <span style={{ fontSize: '0.75rem', fontWeight: 700 }} className="text-green-600">{conf.toFixed(2)}</span>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700 }} className="text-green-600">{conf.toFixed(2)}</span>
+            </div>
           </div>
         )}
       </div>

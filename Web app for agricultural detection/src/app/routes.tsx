@@ -26,7 +26,7 @@ export const router = createBrowserRouter(
     Component: AppShell,
     children: [
       { index: true, Component: HomePage },
-      { path: 'detect', element: <Navigate to="/detect/camera" replace /> },
+      { path: 'detect', element: <Navigate to="/detect/image" replace /> },
       { path: 'detect/:mode', Component: DetectionPage },
       { path: 'history', Component: HistoryPage },
       { path: 'history/:sessionId', Component: HistoryPage },

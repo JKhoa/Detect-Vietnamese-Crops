@@ -17,7 +17,6 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', label: 'Trang chủ', icon: <Home size={20} />, description: 'Giới thiệu hệ thống' },
-  { path: '/detect/camera', label: 'Camera Realtime', icon: <Camera size={20} />, description: 'Nhận diện qua camera' },
   { path: '/detect/image', label: 'Upload Ảnh', icon: <ImageIcon size={20} />, description: 'Nhận diện từ ảnh' },
   { path: '/detect/video', label: 'Upload Video', icon: <Video size={20} />, description: 'Xử lý video' },
   { path: '/history', label: 'Lịch sử', icon: <History size={20} />, description: 'Lịch sử nhận diện' },
